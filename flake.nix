@@ -18,6 +18,7 @@
           xorg.libXcursor
           xorg.libXi
           xorg.libXrandr
+                    vulkan-loader
         ];
 
       in
@@ -35,6 +36,7 @@ xorg.libX11
             libxkbcommon
             libGL
           wayland
+                    vulkan-loader
           ];
             LD_LIBRARY_PATH = libPath;
           # LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
