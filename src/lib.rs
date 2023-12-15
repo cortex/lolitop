@@ -1,4 +1,5 @@
 use log::debug;
+use wgpu::BufferSlice;
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -10,7 +11,8 @@ pub async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
-        .with_title("A fantastic window!")
+        .with_title("xtop!")
+        .with_decorations(false)
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
@@ -69,17 +71,19 @@ pub async fn run() {
 
 use winit::window::Window;
 
+use sysinfo::{CpuExt, NetworkExt, NetworksExt, ProcessExt, System, SystemExt};
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    // The window must be declared after the surface so
-    // it gets dropped after it as the surface contains
-    // unsafe references to the window's resources.
     window: Window,
+    render_pipeline: wgpu::RenderPipeline,
     color: wgpu::Color,
+    cpu_usage: Vec<f32>,
+    sys: System,
 }
 
 impl State {
@@ -103,11 +107,6 @@ impl State {
                 dbg!(&surface);
                 dbg!(adapter.is_surface_supported(&surface));
             });
-        //let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-        // # Safety
-        //
-        // The surface needs to live as long as the window that created it.
-        // State owns the window, so this should be safe.
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -117,25 +116,6 @@ impl State {
             })
             .await
             .unwrap();
-
-        /*let adapter = instance.request_adapter(
-                    &wgpu::RequestAdapterOptions {
-                        power_preference: wgpu::PowerPreference::default(),
-                        compatible_surface: Some(&surface),
-                        force_fallback_adapter: false,
-                    },
-                ).await.unwrap();
-        */
-        /*
-             let adapter = instance
-             .enumerate_adapters(wgpu::Backends::all())
-             .filter(|adapter| {
-                 // Check if this adapter supports our surface
-                 adapter.is_surface_supported(&surface)
-             })
-             .next()
-             .expect("No adapter found");
-        */
 
         let (device, queue) = adapter
             .request_device(
@@ -155,6 +135,7 @@ impl State {
             .await
             .unwrap();
         let surface_caps = surface.get_capabilities(&adapter);
+
         // Shader code in this tutorial assumes an sRGB surface texture. Using a different
         // one will result in all the colors coming out darker. If you want to support non
         // sRGB surfaces, you'll need to account for that when drawing to the frame.
@@ -178,6 +159,53 @@ impl State {
 
         let color = wgpu::Color::RED;
 
+        let sys = System::new();
+
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+
+        let cpu_usage = Vec::with_capacity(sys.cpus().len());
         Self {
             window,
             surface,
@@ -186,6 +214,9 @@ impl State {
             config,
             size,
             color,
+            sys,
+            cpu_usage,
+            render_pipeline,
         }
     }
 
@@ -203,15 +234,17 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        dbg!(event);
+        //dbg!(event);
         match event {
             WindowEvent::CursorMoved {
                 device_id,
                 position,
             } => {
-                //self.color.r = position.x / self.size.width as f64;
-               // dbg!(self.color);
-               self.window().request_redraw();
+                self.color.r = position.x / self.size.width as f64;
+                self.color.b = position.y / self.size.height as f64;
+
+                // dbg!(self.color);
+                self.window().request_redraw();
                 true
             }
             _ => false,
@@ -220,6 +253,11 @@ impl State {
 
     fn update(&mut self) {
         //todo!()
+        self.sys.refresh_cpu(); // Refreshing CPU information.
+        for (idx, cpu) in self.sys.cpus().into_iter().enumerate() {
+            self.cpu_usage[idx] = cpu.cpu_usage();
+            //print!("{}% ", cpu.cpu_usage());
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -233,7 +271,7 @@ impl State {
                 label: Some("Render Encoder"),
             });
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -247,6 +285,17 @@ impl State {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            let buffer = device.create_buffer_init(&BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&data_vec),
+                usage: wgpu::BufferUsage::COPY_SRC,
+            });
+
+            let bs = BufferSlice::from(self.cpu_usage.as_slice());
+            render_pass.set_vertex_buffer(0, &self.cpu_usage.as_slice());
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
