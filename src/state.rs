@@ -41,25 +41,86 @@ impl Vertex {
     }
 }
 
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-    }, // A
-    Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-    }, // B
-    Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-    }, // C
-    Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-    }, // D
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-    }, // E
-];
+struct Model {
+    vertices: Vec<Vertex>,
+    indices: Vec<u16>,
+}
 
-const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4, /* padding */ 0];
+fn pentagon() -> Model {
+    Model {
+        vertices: vec![
+            Vertex {
+                position: [-0.0868241, 0.49240386, 0.0],
+            }, // A
+            Vertex {
+                position: [-0.49513406, 0.06958647, 0.0],
+            }, // B
+            Vertex {
+                position: [-0.21918549, -0.44939706, 0.0],
+            }, // C
+            Vertex {
+                position: [0.35966998, -0.3473291, 0.0],
+            }, // D
+            Vertex {
+                position: [0.44147372, 0.2347359, 0.0],
+            }, // E
+        ],
+        indices: vec![0, 1, 4, 1, 2, 4, 2, 3, 4, /* padding */ 0],
+    }
+}
+
+fn cube() -> Model {
+    //vertices for a cube
+
+    Model {
+        /*
+          3---7
+         /|  /|
+        2-1-6 5
+        | / |/
+        0---4
+
+        + +
+        |/
+        --> +
+
+         */
+        vertices: vec![
+            Vertex {
+                position: [-1.0, -1.0, -1.0],
+            }, // 0
+            Vertex {
+                position: [-1.0, -1.0, 1.0],
+            }, // 1
+            Vertex {
+                position: [-1.0, 1.0, -1.0],
+            }, // 2
+            Vertex {
+                position: [-1.0, 1.0, 1.0],
+            }, // 3
+            Vertex {
+                position: [1.0, -1.0, -1.0],
+            }, // 4
+            Vertex {
+                position: [1.0, -1.0, 1.0],
+            }, // 5
+            Vertex {
+                position: [1.0, 1.0, -1.0],
+            }, // 6
+            Vertex {
+                position: [1.0, 1.0, 1.0],
+            }, // 7
+        ],
+        indices: vec![
+            0, 2, 6, 0, 6, 4, // Front face
+            5, 7, 3, 5, 3, 1, // Back face
+            1, 3, 2, 1, 2, 0, // Right face
+            4, 6, 7, 4, 7, 5, // Left face
+            1, 0, 4, 1, 4, 5, // Bottom face
+            2, 3, 7, 2, 7, 6, // Top face
+        ],
+    }
+}
 
 // NEW!
 struct Instance {
@@ -324,7 +385,7 @@ impl State {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::OVER,
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -352,15 +413,16 @@ impl State {
             // indicates how many array layers the attachments will have.
             multiview: None,
         });
-
+        let model = pentagon();
+        let model = cube();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
+            contents: bytemuck::cast_slice(&model.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
+            contents: bytemuck::cast_slice(&model.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -372,7 +434,7 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });*/
 
-        let num_indices = INDICES.len() as u32;
+        let num_indices = model.indices.len() as u32;
 
         Self {
             surface,
@@ -445,10 +507,10 @@ impl State {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.0,
                         }),
                         store: wgpu::StoreOp::Store,
                     },

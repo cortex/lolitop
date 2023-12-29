@@ -41,7 +41,7 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
-    let scale_factor = instance_value.value;
+    let scale_factor = instance_value.value * 0.5;
     let scaling = mat4x4<f32>(
         scale_factor, 0.0, 0.0, 0.0,
         0.0, scale_factor, 0.0, 0.0,
@@ -68,6 +68,6 @@ var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32> (0.5*in.value, 0.0, 0.0, 1.0);
+    return vec4<f32> (0.1*in.value, 0.2*in.value, 0.0, 0.5);
     //return textureSample(t_diffuse, s_diffuse, in.tex_coords);
 }
