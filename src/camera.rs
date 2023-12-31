@@ -1,5 +1,5 @@
 use cgmath::{InnerSpace, SquareMatrix};
-use wgpu::{util::DeviceExt, Buffer, Queue};
+use wgpu::{util::DeviceExt, Buffer};
 use winit::{
     event::{ElementState, WindowEvent},
     keyboard::{Key, NamedKey},
@@ -39,7 +39,7 @@ impl Camera {
         return OPENGL_TO_WGPU_MATRIX * proj * view;
     }
     pub fn new(device: &wgpu::Device, width: f32, height: f32) -> Self {
-        let controller = CameraController::new(0.2);
+        let controller = CameraController::new(0.01);
         let mut uniform = CameraUniform::new();
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),

@@ -2,7 +2,7 @@ use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
     keyboard::{Key, NamedKey},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 use crate::state::State;

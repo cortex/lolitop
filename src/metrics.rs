@@ -1,144 +1,31 @@
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::{BufRead, BufReader},
-    time::{Duration, Instant},
-};
+use core::f32;
+use std::time::{Duration, Instant};
 
-use sysinfo::System;
-use wgpu::util::DeviceExt;
+use cgmath::Rotation3;
+use wgpu::BufferDescriptor;
 
-pub struct CPUSample {
-    cpu_id: String,
-    user: u64,
-    nice: u64,
-    system: u64,
-    idle: u64,
-    iowait: u64,
-    irq: u64,
-    softirq: u64,
-    steal: u64,
-    guest: u64,
-    guest_nice: u64,
-    time: Instant,
-}
-
-impl CPUSample {
-    fn total(&self) -> u64 {
-        self.user
-            + self.nice
-            + self.system
-            + self.idle
-            + self.iowait
-            + self.irq
-            + self.softirq
-            + self.steal
-            + self.guest
-            + self.guest_nice
-    }
-    fn idle(&self) -> u64 {
-        self.idle + self.iowait
-    }
-    fn usage(&self, other: &Self) -> f32 {
-        let total = self.total();
-        let other_total = other.total();
-        let idle = self.idle();
-        let other_idle = other.idle();
-        let total_delta = total - other_total;
-        let idle_delta = idle - other_idle;
-        1.0 - (idle_delta as f32 / total_delta as f32)
-    }
-}
-
-fn parse_row(row: &str) -> Option<CPUSample> {
-    let words: Vec<&str> = row.split_whitespace().collect();
-    // The line we are interested in is the one that starts with cpu
-    if !words[0].starts_with("cpu") || words[0] == "cpu" {
-        return None;
-    }
-
-    Some(CPUSample {
-        cpu_id: words[0].to_string(),
-        user: words[1].parse().ok()?,
-        nice: words[2].parse().ok()?,
-        system: words[3].parse().ok()?,
-        idle: words[4].parse().ok()?,
-        iowait: words[5].parse().ok()?,
-        irq: words[6].parse().ok()?,
-        softirq: words[7].parse().ok()?,
-        steal: words[8].parse().ok()?,
-        guest: words[9].parse().ok()?,
-        guest_nice: words[10].parse().ok()?,
-        time: Instant::now(),
-    })
-}
-
-pub struct CPUMetrics {
-    samples: HashMap<String, Vec<CPUSample>>,
-}
-
-impl CPUMetrics {
-    fn sample(&mut self) {
-        // parse row for each line in /proc/stat
-        let file = File::open("/proc/stat").unwrap();
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            let line = line.unwrap();
-            let sample = parse_row(&line);
-            if let Some(sample) = sample {
-                self.samples
-                    .entry(sample.cpu_id.clone())
-                    .or_insert_with(Vec::new)
-                    .push(sample);
-            }
-        }
-    }
-    fn current_usage(&self) -> Vec<f32> {
-        // for each cpu, calculate the usage as the delta between the last two samples
-        let mut usage = Vec::new();
-        for (_, samples) in &self.samples {
-            if samples.len() < 2 {
-                continue;
-            }
-            let last = samples.last().unwrap();
-            let prev = &samples[samples.len() - 2];
-            usage.push(last.usage(&prev));
-        }
-        usage
-    }
-}
+use crate::cpu::CPUMetrics;
 
 pub struct SysMetrics {
     last_sample_time: Instant,
-    current: Vec<f32>,
-    target: Vec<f32>,
     pub cpu_usage_buffer: wgpu::Buffer,
     pub cpu_metrics: CPUMetrics,
 }
 
 impl SysMetrics {
     pub fn new(device: &wgpu::Device) -> Self {
-        let mut sys = System::new();
-        sys.refresh_cpu(); // Refreshing CPU information.
-        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-
-        dbg!(sys.cpus().len());
-        sys.refresh_cpu(); // Refreshing CPU information.
         let last_sample_time = Instant::now();
-        let current: Vec<f32> = sys.cpus().into_iter().map(|f| 0.0).collect();
-        let target: Vec<f32> = sys.cpus().into_iter().map(|f| f.cpu_usage()).collect();
-        let cpu_usage_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+
+        let cpu_usage_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("CPU usage"),
-            contents: bytemuck::cast_slice(&current),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: 16 * 4,
+            mapped_at_creation: false,
         });
-        let cpu_metrics = CPUMetrics {
-            samples: HashMap::new(),
-        };
+
+        let cpu_metrics = CPUMetrics::new();
         SysMetrics {
             last_sample_time,
-            current,
-            target,
             cpu_metrics,
             cpu_usage_buffer,
         }
@@ -157,16 +44,105 @@ impl SysMetrics {
     }
 
     pub fn update(&mut self, queue: &wgpu::Queue) {
+        let sample_rate: u64 = 200;
         let now = Instant::now();
-        if now - self.last_sample_time > Duration::from_millis(50) {
+        if now - self.last_sample_time > Duration::from_millis(sample_rate) {
             self.cpu_metrics.sample();
             self.last_sample_time = now;
         }
-
         queue.write_buffer(
             &self.cpu_usage_buffer,
             0,
-            bytemuck::cast_slice(&self.cpu_metrics.current_usage()),
+            bytemuck::cast_slice(&self.cpu_metrics.interpolate_usage(
+                now.duration_since(self.last_sample_time).as_millis() as f32 / (sample_rate as f32),
+            )),
         );
     }
+}
+
+pub struct Instance {
+    position: cgmath::Vector3<f32>,
+    rotation: cgmath::Quaternion<f32>,
+}
+
+const NUM_INSTANCES_PER_ROW: u32 = 4;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+    0.0,
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+);
+
+impl Instance {
+    pub fn to_raw(&self) -> InstanceRaw {
+        InstanceRaw {
+            model: (cgmath::Matrix4::from_translation(self.position)
+                * cgmath::Matrix4::from(self.rotation))
+            .into(),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceRaw {
+    model: [[f32; 4]; 4],
+}
+
+impl InstanceRaw {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            // We need to switch from using a step mode of Vertex to Instance
+            // This means that our shaders will only change to use the next
+            // instance when the shader starts processing a new instance
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
+                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
+                // for each vec4. We don't have to do this in code though.
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
+}
+
+pub fn instances() -> Vec<Instance> {
+    (0..NUM_INSTANCES_PER_ROW)
+        .flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let position = cgmath::Vector3 {
+                    x: 2.0 * x as f32,
+                    y: 0.0,
+                    z: 2.0 * z as f32,
+                } - INSTANCE_DISPLACEMENT;
+
+                let rotation = cgmath::Quaternion::from_axis_angle(
+                    cgmath::Vector3::unit_z(),
+                    cgmath::Deg(0.0),
+                );
+                Instance { position, rotation }
+            })
+        })
+        .collect::<Vec<_>>()
 }

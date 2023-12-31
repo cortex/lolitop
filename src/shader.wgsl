@@ -66,8 +66,37 @@ var t_diffuse: texture_2d<f32>;
 @group(0)@binding(1)
 var s_diffuse: sampler;
 
+fn to_rainbow(v: f32) -> vec4f{
+    // map v to a rainbow color in rgb
+    let r = clamp(1.5 - abs(v - 0.75) * 4.0, 0.0, 1.0);
+    let g = clamp(1.5 - abs(v - 0.50) * 4.0, 0.0, 1.0);
+    let b = clamp(1.5 - abs(v - 0.25) * 4.0, 0.0, 1.0);
+    return vec4<f32>(r, g, b, 1.0);
+    }
+
+fn to_fire(value: f32) -> vec4f{
+    var colors= array<vec3f, 6> (
+        vec3(0.0, 0.0, 0.0),     // Black (for value = 0)
+        vec3(0.125, 0.0, 0.0),  // Dark red
+        vec3(0.25, 0.0, 0.0),   // Darker red
+        vec3(1.0, 0.25, 0.0),   // Orange
+        vec3(1.0, 1.0, 0.0),    // Yellow
+        vec3(1.0, 1.0, 1.0)    // White (for value = 1)
+    );
+    
+    let index = value * 4.0;
+    let lowerIndex = u32(floor(index));
+    let upperIndex = u32(ceil(index));
+    let fraction = index - f32(lowerIndex);
+    
+    let lowerColor = colors[lowerIndex];
+    let upperColor = colors[upperIndex];
+    
+    return vec4<f32>(mix(lowerColor, upperColor, fraction), 1.0);
+
+    }
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32> (0.1*in.value, 0.2*in.value, 0.0, 0.5);
-    //return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    return to_rainbow(in.value);
 }

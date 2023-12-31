@@ -1,20 +1,15 @@
 use std::iter;
 
-use cgmath::prelude::*;
 use wgpu::util::DeviceExt;
-use winit::event::*;
+use winit::keyboard::NamedKey;
 use winit::window::Window;
+use winit::{event::*, keyboard::Key};
 
-use crate::{camera::Camera, metrics::SysMetrics, texture};
+use crate::metrics::{instances, InstanceRaw};
+use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics, texture};
 
-const NUM_INSTANCES_PER_ROW: u32 = 4;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-    0.0,
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-);
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
 }
@@ -46,32 +41,7 @@ struct Model {
     indices: Vec<u16>,
 }
 
-fn pentagon() -> Model {
-    Model {
-        vertices: vec![
-            Vertex {
-                position: [-0.0868241, 0.49240386, 0.0],
-            }, // A
-            Vertex {
-                position: [-0.49513406, 0.06958647, 0.0],
-            }, // B
-            Vertex {
-                position: [-0.21918549, -0.44939706, 0.0],
-            }, // C
-            Vertex {
-                position: [0.35966998, -0.3473291, 0.0],
-            }, // D
-            Vertex {
-                position: [0.44147372, 0.2347359, 0.0],
-            }, // E
-        ],
-        indices: vec![0, 1, 4, 1, 2, 4, 2, 3, 4, /* padding */ 0],
-    }
-}
-
 fn cube() -> Model {
-    //vertices for a cube
-
     Model {
         /*
           3---7
@@ -79,10 +49,6 @@ fn cube() -> Model {
         2-1-6 5
         | / |/
         0---4
-
-        + +
-        |/
-        --> +
 
          */
         vertices: vec![
@@ -122,70 +88,6 @@ fn cube() -> Model {
     }
 }
 
-// NEW!
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-    value: f32,
-}
-
-// NEW!
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: (cgmath::Matrix4::from_translation(self.position)
-                * cgmath::Matrix4::from(self.rotation))
-            .into(),
-        }
-    }
-}
-
-// NEW!
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4],
-}
-
-impl InstanceRaw {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We don't have to do this in code though.
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        }
-    }
-}
-
 pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -196,16 +98,11 @@ pub struct State {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    #[allow(dead_code)]
-    diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
     camera: Camera,
     sys_metrics: SysMetrics,
-    // NEW!
     instances: Vec<Instance>,
-    #[allow(dead_code)]
     instance_buffer: wgpu::Buffer,
-    // window: Window,
 }
 
 impl State {
@@ -316,40 +213,7 @@ impl State {
         });
 
         let sys_metrics = SysMetrics::new(&device);
-        let instances = (0..NUM_INSTANCES_PER_ROW)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let position = cgmath::Vector3 {
-                        x: x as f32,
-                        y: 0.0,
-                        z: z as f32,
-                    } - INSTANCE_DISPLACEMENT;
-
-                    /*   let rotation = if position.is_zero() {
-                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                        // as Quaternions can effect scale if they're not created correctly
-                        cgmath::Quaternion::from_axis_angle(
-                            cgmath::Vector3::unit_z(),
-                            cgmath::Deg(0.0),
-                        )
-                    } else {
-                        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-                    };*/
-                    let rotation = cgmath::Quaternion::from_axis_angle(
-                        cgmath::Vector3::unit_z(),
-                        cgmath::Deg(0.0),
-                    );
-                    let value = 0.2;
-
-                    Instance {
-                        position,
-                        rotation,
-                        value,
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
+        let instances = instances();
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
@@ -413,7 +277,6 @@ impl State {
             // indicates how many array layers the attachments will have.
             multiview: None,
         });
-        let model = pentagon();
         let model = cube();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -446,11 +309,9 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices,
-            diffuse_texture,
             diffuse_bind_group,
             camera,
             sys_metrics,
-            //window,
             instances,
             instance_buffer,
         }
@@ -472,10 +333,22 @@ impl State {
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         self.camera.controller.process_events(event);
         match event {
-            WindowEvent::CursorMoved { position, .. } => {
+            /*             WindowEvent::CursorMoved { position, .. } => {
                 //self.color.r = position.x / self.size.width as f64;
                 //self.color.b = position.y / self.size.height as f64;
 
+                true
+            } */
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key: Key::Named(NamedKey::Space),
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => {
+                dbg!("space pressed");
                 true
             }
             _ => false,
@@ -527,9 +400,7 @@ impl State {
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));
 
-            //    render_pass.set_vertex_buffer(2, self.value_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            // UPDATED!
             render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
         }
 
