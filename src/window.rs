@@ -16,7 +16,6 @@ pub async fn run() {
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
-
     let mut state = State::new(&window).await;
 
     event_loop

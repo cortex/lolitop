@@ -4,6 +4,7 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+#[derive(Debug)]
 struct CPUSample {
     cpu_id: String,
     user: u64,
@@ -73,14 +74,22 @@ pub struct CPUMetrics {
 
 impl CPUMetrics {
     pub fn new() -> Self {
-        CPUMetrics {
+        let mut s = CPUMetrics {
             samples: HashMap::new(),
-        }
+        };
+        s.sample();
+        s
     }
+
+    pub fn ncpus(&self) -> usize {
+        self.samples.len()
+    }
+
     pub fn sample(&mut self) {
         // parse row for each line in /proc/stat
         let file = File::open("/proc/stat").unwrap();
         let reader = BufReader::new(file);
+
         for line in reader.lines() {
             let line = line.unwrap();
             let sample = parse_row(&line);

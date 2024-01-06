@@ -5,7 +5,7 @@ use winit::keyboard::NamedKey;
 use winit::window::Window;
 use winit::{event::*, keyboard::Key};
 
-use crate::metrics::{instances, InstanceRaw};
+use crate::metrics::InstanceRaw;
 use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics, texture};
 
 #[repr(C)]
@@ -101,7 +101,6 @@ pub struct State {
     diffuse_bind_group: wgpu::BindGroup,
     camera: Camera,
     sys_metrics: SysMetrics,
-    instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
 }
 
@@ -213,8 +212,11 @@ impl State {
         });
 
         let sys_metrics = SysMetrics::new(&device);
-        let instances = instances();
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_data = sys_metrics
+            .instances
+            .iter()
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instance_data),
@@ -312,7 +314,6 @@ impl State {
             diffuse_bind_group,
             camera,
             sys_metrics,
-            instances,
             instance_buffer,
         }
     }
@@ -401,7 +402,11 @@ impl State {
             render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));
 
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
+            render_pass.draw_indexed(
+                0..self.num_indices,
+                0,
+                0..self.sys_metrics.instances.len() as _,
+            );
         }
 
         self.queue.submit(iter::once(encoder.finish()));

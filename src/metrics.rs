@@ -10,24 +10,28 @@ pub struct SysMetrics {
     last_sample_time: Instant,
     pub cpu_usage_buffer: wgpu::Buffer,
     pub cpu_metrics: CPUMetrics,
+    pub instances: Vec<Instance>,
 }
 
 impl SysMetrics {
     pub fn new(device: &wgpu::Device) -> Self {
+        let cpu_metrics = CPUMetrics::new();
+
         let last_sample_time = Instant::now();
 
         let cpu_usage_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("CPU usage"),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: 16 * 4,
+            size: cpu_metrics.ncpus() as u64 * 4,
             mapped_at_creation: false,
         });
 
-        let cpu_metrics = CPUMetrics::new();
+        let ncpus = cpu_metrics.ncpus();
         SysMetrics {
             last_sample_time,
             cpu_metrics,
             cpu_usage_buffer,
+            instances: SysMetrics::instances(ncpus as u64),
         }
     }
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -58,19 +62,35 @@ impl SysMetrics {
             )),
         );
     }
+
+    fn instances(n_cpus: u64) -> Vec<Instance> {
+        let per_row = (n_cpus as f32).sqrt() as u64;
+        let displacement: cgmath::Vector3<f32> =
+            cgmath::Vector3::new(per_row as f32 * 0.5, 0.0, per_row as f32 * 0.5);
+        (0..n_cpus)
+            .map(|i| {
+                let x = i % per_row;
+                let z = i / per_row;
+                let position = cgmath::Vector3 {
+                    x: 2.0 * x as f32,
+                    y: 0.0,
+                    z: 2.0 * z as f32,
+                } - displacement;
+
+                let rotation = cgmath::Quaternion::from_axis_angle(
+                    cgmath::Vector3::unit_z(),
+                    cgmath::Deg(0.0),
+                );
+                Instance { position, rotation }
+            })
+            .collect()
+    }
 }
 
 pub struct Instance {
     position: cgmath::Vector3<f32>,
     rotation: cgmath::Quaternion<f32>,
 }
-
-const NUM_INSTANCES_PER_ROW: u32 = 4;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-    0.0,
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-);
 
 impl Instance {
     pub fn to_raw(&self) -> InstanceRaw {
@@ -125,24 +145,4 @@ impl InstanceRaw {
             ],
         }
     }
-}
-
-pub fn instances() -> Vec<Instance> {
-    (0..NUM_INSTANCES_PER_ROW)
-        .flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = cgmath::Vector3 {
-                    x: 2.0 * x as f32,
-                    y: 0.0,
-                    z: 2.0 * z as f32,
-                } - INSTANCE_DISPLACEMENT;
-
-                let rotation = cgmath::Quaternion::from_axis_angle(
-                    cgmath::Vector3::unit_z(),
-                    cgmath::Deg(0.0),
-                );
-                Instance { position, rotation }
-            })
-        })
-        .collect::<Vec<_>>()
 }
