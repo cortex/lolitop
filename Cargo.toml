@@ -15,4 +15,4 @@ sysinfo = "0.30.0"
 bytemuck = { version = "1.14.0", features = [ "derive" ] }
 cgmath = "0.18"
 anyhow = "1.0.76"
-image = "0.24.7"
+image = "0.25.2"
