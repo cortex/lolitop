@@ -15,7 +15,7 @@ pub struct SysMetrics {
 
 impl SysMetrics {
     pub fn new(device: &wgpu::Device) -> Self {
-        let cpu_metrics = CPUMetrics::new();
+        let cpu_metrics = CPUMetrics::default();
 
         let last_sample_time = Instant::now();
 
@@ -64,17 +64,20 @@ impl SysMetrics {
     }
 
     fn instances(n_cpus: u64) -> Vec<Instance> {
-        let per_row = (n_cpus as f32).sqrt() as u64;
+        static SPACING: f32 = 2.0;
+        
+        let per_row = (n_cpus as f32).sqrt().ceil() as u64;
+        println!("{}", per_row);
         let displacement: cgmath::Vector3<f32> =
-            cgmath::Vector3::new(per_row as f32 * 0.5, 0.0, per_row as f32 * 0.5);
+            cgmath::Vector3::new((per_row - 1) as f32, 0., (per_row - 1) as f32) * SPACING / 2.;
         (0..n_cpus)
             .map(|i| {
                 let x = i % per_row;
                 let z = i / per_row;
                 let position = cgmath::Vector3 {
-                    x: 2.0 * x as f32,
+                    x: SPACING * x as f32,
                     y: 0.0,
-                    z: 2.0 * z as f32,
+                    z: SPACING * z as f32,
                 } - displacement;
 
                 let rotation = cgmath::Quaternion::from_axis_angle(
@@ -83,6 +86,7 @@ impl SysMetrics {
                 );
                 Instance { position, rotation }
             })
+            .take(n_cpus as usize)
             .collect()
     }
 }

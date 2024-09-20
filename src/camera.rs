@@ -1,14 +1,17 @@
-use cgmath::{InnerSpace, SquareMatrix};
+use std::time::Duration;
+
+use cgmath::{Angle, Rotation3, SquareMatrix};
 use wgpu::{util::DeviceExt, Buffer};
 use winit::{
-    event::{ElementState, WindowEvent},
-    keyboard::{Key, NamedKey},
+    dpi::PhysicalPosition, event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent}, keyboard::{Key, NamedKey}
 };
 
 pub struct Camera {
-    eye: cgmath::Point3<f32>,
+    angle: cgmath::Deg<f32>,
+    distance: f32,
     target: cgmath::Point3<f32>,
     up: cgmath::Vector3<f32>,
+    plane_angle: cgmath::Deg<f32>,
     aspect: f32,
     fovy: f32,
     znear: f32,
@@ -17,7 +20,6 @@ pub struct Camera {
     uniform: CameraUniform,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    pub controller: CameraController,
 }
 
 #[rustfmt::skip]
@@ -30,16 +32,17 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 
 impl Camera {
     fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        // 1.
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        // 2.
+        let position = self.target +
+            cgmath::Quaternion::from_angle_y(self.angle)
+            * cgmath::Quaternion::from_angle_z(self.plane_angle)
+            * (cgmath::Vector3::new(1.0, 0.0, 0.0) * self.distance);
+        
+        let view = cgmath::Matrix4::look_at_rh(position, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-
-        // 3.
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
+        
+        OPENGL_TO_WGPU_MATRIX * proj * view
     }
     pub fn new(device: &wgpu::Device, width: f32, height: f32) -> Self {
-        let controller = CameraController::new(0.01);
         let mut uniform = CameraUniform::new();
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -70,16 +73,17 @@ impl Camera {
             label: Some("camera_bind_group"),
         });
         let camera = Camera {
-            eye: (0.0, 5.0, 10.0).into(),
+            angle: cgmath::Deg(0.0),
+            distance: 15.0,
             target: (0.0, 0.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: width / height,
+            plane_angle: cgmath::Deg(30.0),
             fovy: 45.0,
             znear: 0.1,
             zfar: 100.0,
             bind_group,
             bind_group_layout,
-            controller,
             buffer,
             uniform,
         };
@@ -87,29 +91,9 @@ impl Camera {
 
         camera
     }
-
-    pub fn update(&mut self, queue: &mut wgpu::Queue) {
-        let controller = &self.controller;
-        let forward = (self.target - self.eye).normalize();
-        if controller.is_forward_pressed {
-            self.eye += forward * controller.speed;
-        }
-        if controller.is_backward_pressed {
-            self.eye -= forward * controller.speed;
-        }
-
-        let right = forward.cross(self.up);
-
-        if controller.is_right_pressed {
-            self.eye += right * controller.speed;
-        }
-        if controller.is_left_pressed {
-            self.eye -= right * controller.speed;
-        }
-        let pm = self.build_view_projection_matrix().into();
-        self.uniform.view_proj = pm;
-
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+    
+    pub fn resize(&mut self, width: f32, height: f32) {
+        self.aspect = width / height;
     }
 }
 
@@ -135,27 +119,73 @@ impl CameraUniform {
 }
 
 pub struct CameraController {
-    speed: f32,
+    camera: Camera,
+    distance_per_second: f32,
+    distance_per_pixel: f32,
+    distance_per_line: f32,
+    degrees_per_second: f32,
+    degrees_per_pixel: f32,
     is_up_pressed: bool,
     is_down_pressed: bool,
     is_forward_pressed: bool,
     is_backward_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    is_right_mouse_pressed: bool,
+    last_cursor_position: Option<PhysicalPosition<f64>>,
 }
 
 impl CameraController {
-    fn new(speed: f32) -> Self {
+    pub fn new(camera: Camera) -> Self {
         Self {
-            speed,
+            camera,
+            distance_per_second: 15.0,
+            distance_per_pixel: 0.1,
+            distance_per_line: 1.0,
+            degrees_per_second: 180.0,
+            degrees_per_pixel: 0.5,
             is_up_pressed: false,
             is_down_pressed: false,
             is_forward_pressed: false,
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            is_right_mouse_pressed: false,
+            last_cursor_position: None,
         }
     }
+    
+    pub fn camera(&self) -> &Camera {
+        &self.camera
+    }
+    
+    pub fn camera_mut(&mut self) -> &mut Camera {
+        &mut self.camera
+    }
+    
+    pub fn update(&mut self, dt: Duration, queue: &mut wgpu::Queue) {
+        let camera = &mut self.camera;
+        if self.is_forward_pressed {
+            camera.distance = (camera.distance - self.distance_per_second * dt.as_secs_f32()).max(0.0);
+        }
+        if self.is_backward_pressed {
+            camera.distance += self.distance_per_second * dt.as_secs_f32();
+        }
+
+        if self.is_right_pressed {
+            camera.angle += cgmath::Deg(self.degrees_per_second * dt.as_secs_f32());
+            camera.angle = camera.angle.normalize();
+        }
+        if self.is_left_pressed {
+            camera.angle -= cgmath::Deg(self.degrees_per_second * dt.as_secs_f32());
+            camera.angle = camera.angle.normalize();
+        }
+        let pm = camera.build_view_projection_matrix().into();
+        camera.uniform.view_proj = pm;
+
+        queue.write_buffer(&camera.buffer, 0, bytemuck::cast_slice(&[camera.uniform]));
+    }
+
 
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
         match event {
@@ -188,6 +218,52 @@ impl CameraController {
                     }
                     _ => false,
                 }
+            }
+            WindowEvent::MouseInput {
+                device_id: _,
+                state,
+                button: MouseButton::Right
+            } => {
+                self.is_right_mouse_pressed = match state {
+                    ElementState::Pressed => true,
+                    ElementState::Released => false,
+                };
+                true
+            }
+            WindowEvent::MouseWheel {
+                device_id: _,
+                delta,
+                phase: TouchPhase::Moved
+            } => {
+                
+                // println!("{:?}", delta.1);
+                self.camera.distance += -match delta {
+                    MouseScrollDelta::LineDelta(_, delta) => delta * self.distance_per_line,
+                    MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => *y as f32 * self.distance_per_pixel,
+                };
+                
+                true
+            }
+            WindowEvent::CursorLeft { device_id: _ } => {
+                self.last_cursor_position = None;
+                true
+            }
+            WindowEvent::CursorMoved { device_id: _, position } => {
+                if self.is_right_mouse_pressed {
+                    if let Some(last_cursor_position) = self.last_cursor_position {
+                        let delta =
+                            cgmath::Vector2::new(position.x, position.y)
+                            - cgmath::Vector2::new(last_cursor_position.x, last_cursor_position.y);
+                        
+                        self.camera.plane_angle += cgmath::Deg(delta.y as f32 * self.degrees_per_pixel);
+                        self.camera.plane_angle = self.camera.plane_angle.normalize();
+                        
+                        self.camera.angle += -cgmath::Deg(delta.x as f32 * self.degrees_per_pixel);
+                        self.camera.angle = self.camera.angle.normalize();
+                    }
+                }
+                self.last_cursor_position = Some(position.to_owned());
+                true
             }
             _ => false,
         }
