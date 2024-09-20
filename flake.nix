@@ -10,36 +10,36 @@
       let
         pkgs = import nixpkgs { inherit system; };
         naersk-lib = pkgs.callPackage naersk { };
-                libPath = with pkgs; lib.makeLibraryPath [
-          libGL
+        libPath = with pkgs; lib.makeLibraryPath [
           libxkbcommon
           wayland
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libXrandr
-                    vulkan-loader
+          vulkan-loader
         ];
-
       in
       {
-        defaultPackage = naersk-lib.buildPackage ./.;
+        defaultPackage = naersk-lib.buildPackage rec {
+          src = ./.;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          postInstall = ''
+            wrapProgram "$out/bin/xtop" --prefix LD_LIBRARY_PATH : "${libPath}"
+          '';
+        };
         devShell = with pkgs; mkShell {
-          buildInputs = [ 
-            cargo 
-            rustc 
-            rustfmt 
-            pre-commit 
-            rustPackages.clippy 
-            rust-analyzer wayland
-xorg.libX11
+          buildInputs = [
+            cargo
+            rustc
+            rustfmt
+            pre-commit
+            rustPackages.clippy
+            rust-analyzer
+            wayland
+            xorg.libX11
             libxkbcommon
             libGL
-          wayland
-                    vulkan-loader
+            wayland
+            vulkan-loader
           ];
-            LD_LIBRARY_PATH = libPath;
-          # LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
+          LD_LIBRARY_PATH = libPath;
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
         };
       });

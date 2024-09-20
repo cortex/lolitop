@@ -129,7 +129,7 @@ impl State {
                 force_fallback_adapter: false,
             })
             .await
-            .unwrap();
+            .expect("no suitable adapter found");
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
