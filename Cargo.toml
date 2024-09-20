@@ -3,8 +3,6 @@ name = "lolitop"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 wgpu = "22.1.0"
 winit = { version = "0.30.5"}
@@ -15,4 +13,3 @@ pollster = "0.3"
 bytemuck = { version = "1.18.0", features = [ "derive" ] }
 cgmath = "0.18"
 anyhow = "1.0.89"
-image = "0.25.2"

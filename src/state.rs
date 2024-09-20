@@ -8,7 +8,7 @@ use winit::{event::*, keyboard::Key};
 
 use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
-use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics, texture};
+use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics};
 
 use std::sync::Arc;
 
@@ -102,7 +102,6 @@ pub struct State<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    diffuse_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
     sys_metrics: SysMetrics,
     instance_buffer: wgpu::Buffer,
@@ -166,48 +165,6 @@ impl<'a> State<'a> {
         };
         surface.configure(&device, &config);
 
-        let diffuse_bytes = include_bytes!("tvätta.jpg");
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
-
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
-
         let sys_metrics = SysMetrics::new(&device);
         let instance_data = sys_metrics
             .instances
@@ -233,10 +190,7 @@ impl<'a> State<'a> {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    &texture_bind_group_layout,
-                    &camera_controller.camera().bind_group_layout,
-                ],
+                bind_group_layouts: &[&camera_controller.camera().bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -318,7 +272,6 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
-            diffuse_bind_group,
             camera_controller,
             sys_metrics,
             instance_buffer,
@@ -411,8 +364,7 @@ impl<'a> State<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera_controller.camera().bind_group, &[]);
+            render_pass.set_bind_group(0, &self.camera_controller.camera().bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));

@@ -11,7 +11,6 @@ use pollster::FutureExt;
 
 #[derive(Default)]
 struct App<'a> {
-    //window: Option<Window>,
     state: Option<State<'a>>,
 }
 
