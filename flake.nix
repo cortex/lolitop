@@ -15,13 +15,32 @@
           wayland
           vulkan-loader
         ];
+        desktopItem = pkgs.makeDesktopItem {
+          name = "xtop";
+          exec = "xtop";
+          icon = "xtop.svg";
+          comment = "Eye-candy system monitor .";
+          desktopName = "XTop";
+          genericName = "CPU Usage Visualizer";
+          categories = [ "Utility" ];
+        };
       in
       {
-        defaultPackage = naersk-lib.buildPackage rec {
+        packages.default = naersk-lib.buildPackage rec {
           src = ./.;
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postInstall = ''
             wrapProgram "$out/bin/xtop" --prefix LD_LIBRARY_PATH : "${libPath}"
+            
+            mkdir -p $out/share/icons
+            mkdir -p $out/share/applications
+            
+            # Actually, we should really install it under
+            # share/icons/hicolor/scalable/xtop.svg
+            # but I couldn't get it to work.
+            cp ${self}/assets/icon.svg $out/share/icons/xtop.svg
+            cp ${desktopItem}/share/applications/${desktopItem.name} \
+              $out/share/applications
           '';
         };
         devShell = with pkgs; mkShell {
