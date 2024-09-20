@@ -22,10 +22,10 @@ pub async fn run() {
 let buttons = winit::window::WindowButtons::all();
 
             let window_attributes = Window::default_attributes()
-            .with_title("xtop!")
+            .with_title("lolitop!")
             .with_decorations(true)
             .with_enabled_buttons(buttons)
-            .with_name("se.frikod.xtop", "main")
+            .with_name("se.frikod.lolitop", "main")
             .with_resizable(true);
         
             let window: Option<Window> = Some(event_loop.create_window(window_attributes).unwrap());

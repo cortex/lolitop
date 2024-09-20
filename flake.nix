@@ -16,11 +16,11 @@
           vulkan-loader
         ];
         desktopItem = pkgs.makeDesktopItem {
-          name = "se.frikod.xtop";
-          exec = "xtop";
-          icon = "xtop.svg";
+          name = "se.frikod.lolitop";
+          exec = "lolitop";
+          icon = "lolitop.svg";
           comment = "Eye-candy system monitor .";
-          desktopName = "XTop";
+          desktopName = "lolitop";
           genericName = "CPU Usage Visualizer";
           categories = [ "Utility" ];
         };
@@ -30,12 +30,12 @@
           src = ./.;
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postInstall = ''
-            wrapProgram "$out/bin/xtop" --prefix LD_LIBRARY_PATH : "${libPath}"
+            wrapProgram "$out/bin/lolitop" --prefix LD_LIBRARY_PATH : "${libPath}"
             
             mkdir -p $out/share/icons/hicolor/scalable/apps
             mkdir -p $out/share/applications
             
-            cp ${self}/assets/icon.svg $out/share/icons/hicolor/scalable/apps/xtop.svg
+            cp ${self}/assets/icon.svg $out/share/icons/hicolor/scalable/apps/lolitop.svg
             cp ${desktopItem}/share/applications/${desktopItem.name} \
               $out/share/applications
           '';
