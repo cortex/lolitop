@@ -10,6 +10,8 @@ use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
 use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics, texture};
 
+use std::sync::Arc;
+
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -90,8 +92,8 @@ fn cube() -> Model {
     }
 }
 
-pub struct State {
-    surface: wgpu::Surface,
+pub struct State<'a> {
+    surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -104,27 +106,20 @@ pub struct State {
     camera_controller: CameraController,
     sys_metrics: SysMetrics,
     instance_buffer: wgpu::Buffer,
-    window: Window,
+    window: Arc<Window>,
     last_frame: Instant,
 }
 
-impl State {
-    // Creating some of the wgpu types requires async code
+impl<'a> State<'a> {
     pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
-
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
 
-        // # Safety
-        //
-        // The surface needs to live as long as the window that created it.
-        // State owns the window so this should be safe.
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let window = Arc::new(window);
+        let surface = instance.create_surface(Arc::clone(&window)).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -137,14 +132,15 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
+                    required_features: wgpu::Features::empty(),
                     // WebGL doesn't support all of wgpu's features, so if
                     // we're building for the web we'll have to disable some.
-                    limits: if cfg!(target_arch = "wasm32") {
+                    required_limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
                         wgpu::Limits::default()
                     },
+                    memory_hints: wgpu::MemoryHints::Performance,
                 },
                 None, // Trace path
             )
@@ -152,9 +148,6 @@ impl State {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
-        // Srgb surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
             .iter()
@@ -162,6 +155,7 @@ impl State {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
+            desired_maximum_frame_latency: 2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
@@ -230,22 +224,31 @@ impl State {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
-        let camera_controller = CameraController::new(Camera::new(&device, config.width as f32, config.height as f32));
+        let camera_controller = CameraController::new(Camera::new(
+            &device,
+            config.width as f32,
+            config.height as f32,
+        ));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_controller.camera().bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group_layout,
+                    &camera_controller.camera().bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            cache: None,
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
                 buffers: &[Vertex::desc(), InstanceRaw::desc(), SysMetrics::desc()],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -258,6 +261,7 @@ impl State {
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -333,7 +337,9 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.camera_controller.camera_mut().resize(new_size.width as f32, new_size.height as f32);
+            self.camera_controller
+                .camera_mut()
+                .resize(new_size.width as f32, new_size.height as f32);
         }
     }
 
@@ -366,7 +372,7 @@ impl State {
         let now = Instant::now();
         let dt = now - self.last_frame;
         self.last_frame = now;
-        
+
         self.camera_controller.update(dt, &mut self.queue);
         self.sys_metrics.update(&self.queue);
     }
