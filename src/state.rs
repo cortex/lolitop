@@ -102,11 +102,12 @@ pub struct State {
     camera: Camera,
     sys_metrics: SysMetrics,
     instance_buffer: wgpu::Buffer,
+    window: Window,
 }
 
 impl State {
     // Creating some of the wgpu types requires async code
-    pub async fn new(window: &Window) -> Self {
+    pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -121,7 +122,6 @@ impl State {
         // The surface needs to live as long as the window that created it.
         // State owns the window so this should be safe.
         let surface = unsafe { instance.create_surface(&window) }.unwrap();
-
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -315,6 +315,7 @@ impl State {
             camera,
             sys_metrics,
             instance_buffer,
+            window,
         }
     }
 
@@ -411,7 +412,7 @@ impl State {
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
-
+        self.window.request_redraw();
         Ok(())
     }
 }

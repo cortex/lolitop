@@ -1,70 +1,80 @@
 use winit::{
-    event::{ElementState, Event, KeyEvent, WindowEvent},
-    event_loop::EventLoop,
-    keyboard::{Key, NamedKey},
-    window::WindowBuilder,
+    application::ApplicationHandler, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{Key, NamedKey}, platform::wayland::WindowAttributesExtWayland, window::{Window, WindowId}
 };
+
+use pollster::FutureExt;
+
+#[derive(Default)]
+struct App {
+    //window: Option<Window>,
+    state: Option<State>,
+}
 
 use crate::state::State;
 
 pub async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_title("xtop!")
-        .with_decorations(true)
-        .with_resizable(true)
-        .build(&event_loop)
-        .unwrap();
-    let mut state = State::new(&window).await;
 
-    event_loop
-        .run(move |event, control_flow| match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == window.id() => {
-                window.request_redraw();
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    state: ElementState::Pressed,
-                                    logical_key: Key::Named(NamedKey::Escape),
-                                    ..
-                                },
+    impl ApplicationHandler for App {
+        fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+
+let buttons = winit::window::WindowButtons::all();
+
+            let window_attributes = Window::default_attributes()
+            .with_title("xtop!")
+            .with_decorations(true)
+            .with_enabled_buttons(buttons)
+            .with_name("se.frikod.xtop", "main")
+            .with_resizable(true);
+        
+            let window: Option<Window> = Some(event_loop.create_window(window_attributes).unwrap());
+            let state = State::new(window.unwrap()).block_on();
+            self.state = Some(state);
+        }
+    
+        fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+            if !self.state.as_mut().unwrap().input(&event) {
+
+            match event {
+                WindowEvent::CloseRequested => {
+                    println!("The close button was pressed; stopping");
+                    event_loop.exit();
+                },
+
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            state: ElementState::Pressed,
+                            logical_key: Key::Named(NamedKey::Escape),
                             ..
-                        } => control_flow.exit(),
-                        WindowEvent::RedrawRequested => {
-                            state.update();
-                            match state.render() {
-                                Ok(_) => {}
-                                // Reconfigure the surface if lost
-                                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                                // The system is out of memory, we should probably quit
-                                Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
-                                // All other errors (Outdated, Timeout) should be resolved by the next frame
-                                Err(e) => eprintln!("{:?}", e),
-                            }
-                        }
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        /*WindowEvent::ScaleFactorChanged {
-                            scale_factor,
-                            inner_size_writer,
-                            ..
-                        } => {
-                            dbg!("dpi");
-                            //state.resize(inner_size_writer.request_inner_size(new_inner_size));
-                        }*/
-                        _ => {}
+                        },
+                    ..
+                } => event_loop.exit(),
+
+                WindowEvent::RedrawRequested => {
+                    let state = self.state.as_mut().unwrap();
+                    state.update();
+                    match state.render() {
+                        Ok(_) => {}
+                        // Reconfigure the surface if lost
+                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                        // The system is out of memory, we should probably quit
+                        Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                        // All other errors (Outdated, Timeout) should be resolved by the next frame
+                        Err(e) => eprintln!("{:?}", e),
                     }
                 }
+                WindowEvent::Resized(physical_size) => {
+                    let state = self.state.as_mut().unwrap();
+                    state.resize(physical_size);
+                }
+                _ => (),
             }
-            _ => {}
-        })
-        .unwrap();
+        }
+        }
+    }
+    let mut app = App::default();
+    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.run_app(&mut app).unwrap();
 }

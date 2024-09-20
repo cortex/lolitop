@@ -16,7 +16,7 @@
           vulkan-loader
         ];
         desktopItem = pkgs.makeDesktopItem {
-          name = "xtop";
+          name = "se.frikod.xtop";
           exec = "xtop";
           icon = "xtop.svg";
           comment = "Eye-candy system monitor .";
