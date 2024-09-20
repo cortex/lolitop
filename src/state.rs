@@ -6,6 +6,7 @@ use winit::keyboard::NamedKey;
 use winit::window::Window;
 use winit::{event::*, keyboard::Key};
 
+use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
 use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics, texture};
 
@@ -100,7 +101,7 @@ pub struct State {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
-    camera: Camera,
+    camera_controller: CameraController,
     sys_metrics: SysMetrics,
     instance_buffer: wgpu::Buffer,
     window: Window,
@@ -229,12 +230,12 @@ impl State {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
-        let camera = Camera::new(&device, config.width as f32, config.height as f32);
+        let camera_controller = CameraController::new(Camera::new(&device, config.width as f32, config.height as f32));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera.bind_group_layout],
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_controller.camera().bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -314,7 +315,7 @@ impl State {
             index_buffer,
             num_indices,
             diffuse_bind_group,
-            camera,
+            camera_controller,
             sys_metrics,
             instance_buffer,
             window,
@@ -332,12 +333,12 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.camera.resize(new_size.width as f32, new_size.height as f32);
+            self.camera_controller.camera_mut().resize(new_size.width as f32, new_size.height as f32);
         }
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera.controller.process_events(event);
+        self.camera_controller.process_events(event);
         match event {
             /*             WindowEvent::CursorMoved { position, .. } => {
                 //self.color.r = position.x / self.size.width as f64;
@@ -366,7 +367,7 @@ impl State {
         let dt = now - self.last_frame;
         self.last_frame = now;
         
-        self.camera.update(dt, &mut self.queue);
+        self.camera_controller.update(dt, &mut self.queue);
         self.sys_metrics.update(&self.queue);
     }
 
@@ -405,7 +406,7 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera.bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_controller.camera().bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));
