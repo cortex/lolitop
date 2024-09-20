@@ -1,5 +1,5 @@
 use winit::{
-    application::ApplicationHandler, event::{ElementState, Event, KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{Key, NamedKey}, platform::wayland::WindowAttributesExtWayland, window::{Window, WindowId}
+    application::ApplicationHandler, event::{ElementState, KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{Key, NamedKey}, platform::wayland::WindowAttributesExtWayland, window::{Window, WindowId}
 };
 
 use pollster::FutureExt;
@@ -28,12 +28,12 @@ let buttons = winit::window::WindowButtons::all();
             .with_name("se.frikod.lolitop", "main")
             .with_resizable(true);
         
-            let window: Option<Window> = Some(event_loop.create_window(window_attributes).unwrap());
-            let state = State::new(window.unwrap()).block_on();
+            let window: Window = event_loop.create_window(window_attributes).unwrap();
+            let state = State::new(window).block_on();
             self.state = Some(state);
         }
     
-        fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
             if !self.state.as_mut().unwrap().input(&event) {
 
             match event {

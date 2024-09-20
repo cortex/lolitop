@@ -1,4 +1,5 @@
 use std::iter;
+use std::time::Instant;
 
 use wgpu::util::DeviceExt;
 use winit::keyboard::NamedKey;
@@ -103,6 +104,7 @@ pub struct State {
     sys_metrics: SysMetrics,
     instance_buffer: wgpu::Buffer,
     window: Window,
+    last_frame: Instant,
 }
 
 impl State {
@@ -316,6 +318,7 @@ impl State {
             sys_metrics,
             instance_buffer,
             window,
+            last_frame: Instant::now(),
         }
     }
 
@@ -329,6 +332,7 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.camera.resize(new_size.width as f32, new_size.height as f32);
         }
     }
 
@@ -358,8 +362,12 @@ impl State {
     }
 
     pub fn update(&mut self) {
-        self.camera.update(&mut self.queue);
-        self.sys_metrics.update(&mut self.queue);
+        let now = Instant::now();
+        let dt = now - self.last_frame;
+        self.last_frame = now;
+        
+        self.camera.update(dt, &mut self.queue);
+        self.sys_metrics.update(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
