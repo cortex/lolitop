@@ -73,14 +73,6 @@ pub struct CPUMetrics {
 }
 
 impl CPUMetrics {
-    pub fn new() -> Self {
-        let mut s = CPUMetrics {
-            samples: HashMap::new(),
-        };
-        s.sample();
-        s
-    }
-
     pub fn ncpus(&self) -> usize {
         self.samples.len()
     }
@@ -96,26 +88,34 @@ impl CPUMetrics {
             if let Some(sample) = sample {
                 self.samples
                     .entry(sample.cpu_id.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(sample);
             }
         }
     }
 
     pub fn interpolate_usage(&self, delta: f32) -> Vec<f32> {
-        let mut usage = Vec::new();
-        for (_, samples) in &self.samples {
+        self.samples.iter().filter_map(|(_, samples)| {
             if samples.len() < 3 {
-                continue;
+                return None;
             }
             let last = samples.last().unwrap();
             let prev = &samples[samples.len() - 2];
             let pprev = &samples[samples.len() - 3];
 
-            let last_usage = last.usage(&prev);
-            let prev_usage = prev.usage(&pprev);
-            usage.push(prev_usage + (last_usage - prev_usage) * delta);
-        }
-        usage
+            let last_usage = last.usage(prev);
+            let prev_usage = prev.usage(pprev);
+            Some(prev_usage + (last_usage - prev_usage) * delta)
+        }).collect()
+    }
+}
+
+impl Default for CPUMetrics {
+    fn default() -> Self {
+        let mut s = CPUMetrics {
+            samples: HashMap::new(),
+        };
+        s.sample();
+        s
     }
 }

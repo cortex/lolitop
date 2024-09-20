@@ -15,7 +15,7 @@ pub struct SysMetrics {
 
 impl SysMetrics {
     pub fn new(device: &wgpu::Device) -> Self {
-        let cpu_metrics = CPUMetrics::new();
+        let cpu_metrics = CPUMetrics::default();
 
         let last_sample_time = Instant::now();
 
