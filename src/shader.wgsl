@@ -7,9 +7,19 @@ struct Camera {
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
+
+struct Light {
+    position: vec3<f32>,
+    color: vec3<f32>,
+}
+@group(1) @binding(0)
+var<uniform> light: Light;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
 }
+
 struct InstanceInput {
     @location(5) model_matrix_0: vec4<f32>,
     @location(6) model_matrix_1: vec4<f32>,
@@ -23,9 +33,11 @@ struct ValueInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) tex_coords: vec2<f32>,
-    @location(1) position: vec4<f32>,
-    @location(2) value: f32
+    @location(0) position: vec4<f32>,
+    @location(1) value: f32,
+    @location(2) world_normal: vec3<f32>,
+    @location(3) world_position: vec3<f32>,
+
 }
 
 @vertex
@@ -50,12 +62,25 @@ fn vs_main(
     );
 
     var out: VertexOutput;
+
+    out.world_normal = model.normal;
     out.clip_position = camera.view_proj * model_matrix * scaling * vec4<f32>(model.position, 1.0);
     out.position = instance_value.value * model_matrix * vec4<f32>(model.position, 1.0);
+
+    var world_position: vec4<f32> = model_matrix * vec4<f32>(model.position, 1.0);
+    out.world_position = world_position.xyz;
+
     out.value = instance_value.value;
     return out;
 }
 
+fn to_cosmic(v: f32) -> vec4f {
+    let r = clamp(1.5 - abs(v - 0.75) * 4.0, 0.0, 1.0);
+    //let g = clamp(1.5 - abs(v - 0.50) * 4.0, 0.0, 1.0);
+    let g = 0.0;
+    let b = clamp(1.5 - abs(v - 0.25) * 4.0, 0.0, 1.0);
+    return vec4<f32>(r, g, b, 1.0);
+}
 
 fn to_rainbow(v: f32) -> vec4f {
     // map v to a rainbow color in rgb
@@ -88,5 +113,18 @@ fn to_fire(value: f32) -> vec4f {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return to_rainbow(in.value);
+
+    let object_color: vec4<f32> = to_rainbow(in.value);
+
+    let ambient_strength = 0.01;
+    let ambient_color = light.color * ambient_strength;
+
+    let light_dir = normalize(light.position - in.world_position);
+
+    let diffuse_strength = max(dot(in.world_normal, light_dir), 0.0);
+    let diffuse_color = light.color * diffuse_strength;
+
+    let result = (ambient_color + diffuse_color) * object_color.xyz;
+
+    return vec4<f32>(result, object_color.a);
 }

@@ -1,6 +1,8 @@
 use std::iter;
 use std::time::Instant;
 
+use cgmath::Rotation3;
+use wgpu::naga::front;
 use wgpu::util::DeviceExt;
 use winit::keyboard::NamedKey;
 use winit::window::Window;
@@ -10,12 +12,19 @@ use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
 use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics};
 
+use crate::light::LightUniform;
+
 use std::sync::Arc;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    normal: [f32; 3],
+}
+
+fn create_vertex(position: [f32; 3], normal: [f32; 3]) -> Vertex {
+    Vertex { position, normal }
 }
 
 impl Vertex {
@@ -42,52 +51,79 @@ impl Vertex {
 
 struct Model {
     vertices: Vec<Vertex>,
-    indices: Vec<u16>,
+    vertex_indices: Vec<u16>,
 }
 
 fn cube() -> Model {
-    Model {
-        /*
-          3---7
-         /|  /|
-        2-1-6 5
-        | / |/
-        0---4
+    /*
+       7--------6
+      / |      /|
+     /  |     / |
+    2--------3  |
+    |   5----|--4    y  z
+    |  /     | /     | /
+    | /      |/      |/
+    0--------1       o----> x
 
-         */
+     */
+    // Vertices
+    let v0 = [-1.0, -1.0, -1.0];
+    let v1 = [1.0, -1.0, -1.0];
+    let v2 = [-1.0, 1.0, -1.0];
+    let v3 = [1.0, 1.0, -1.0];
+    let v4 = [1.0, -1.0, 1.0];
+    let v5 = [-1.0, -1.0, 1.0];
+    let v6 = [1.0, 1.0, 1.0];
+    let v7 = [-1.0, 1.0, 1.0];
+
+    // Normals
+    let front = [0.0, 0.0, -1.0];
+    let back = [0.0, 0.0, 1.0];
+    let left = [0.0, -1.0, 0.0];
+    let right = [0.0, 1.0, 0.0];
+    let top = [-1.0, 0.0, 0.0];
+    let bottom = [1.0, 0.0, 0.0];
+
+    Model {
         vertices: vec![
-            Vertex {
-                position: [-1.0, -1.0, -1.0],
-            }, // 0
-            Vertex {
-                position: [-1.0, -1.0, 1.0],
-            }, // 1
-            Vertex {
-                position: [-1.0, 1.0, -1.0],
-            }, // 2
-            Vertex {
-                position: [-1.0, 1.0, 1.0],
-            }, // 3
-            Vertex {
-                position: [1.0, -1.0, -1.0],
-            }, // 4
-            Vertex {
-                position: [1.0, -1.0, 1.0],
-            }, // 5
-            Vertex {
-                position: [1.0, 1.0, -1.0],
-            }, // 6
-            Vertex {
-                position: [1.0, 1.0, 1.0],
-            }, // 7
+            // Front
+            create_vertex(v0, front), // 0
+            create_vertex(v1, front), // 1
+            create_vertex(v2, front), // 2
+            create_vertex(v3, front), // 3
+            // Right
+            create_vertex(v1, right), // 4
+            create_vertex(v4, right), // 5
+            create_vertex(v3, right), // 6
+            create_vertex(v6, right), // 7
+            // Back
+            create_vertex(v4, back), // 8
+            create_vertex(v5, back), // 9
+            create_vertex(v6, back), // 10
+            create_vertex(v7, back), // 11
+            // Left
+            create_vertex(v5, left), // 12
+            create_vertex(v0, left), // 13
+            create_vertex(v7, left), // 14
+            create_vertex(v2, left), // 15
+            // Top
+            create_vertex(v2, top), // 16
+            create_vertex(v3, top), // 17
+            create_vertex(v7, top), // 18
+            create_vertex(v6, top), // 19
+            // Bottom
+            create_vertex(v5, bottom), // 20
+            create_vertex(v4, bottom), // 21
+            create_vertex(v0, bottom), // 22
+            create_vertex(v1, bottom), // 23
         ],
-        indices: vec![
-            0, 2, 6, 0, 6, 4, // Front face
-            5, 7, 3, 5, 3, 1, // Back face
-            1, 3, 2, 1, 2, 0, // Right face
-            4, 6, 7, 4, 7, 5, // Left face
-            1, 0, 4, 1, 4, 5, // Bottom face
-            2, 3, 7, 2, 7, 6, // Top face
+        vertex_indices: vec![
+            0, 2, 1, 2, 3, 1, // Front
+            4, 6, 5, 6, 7, 5, // Right
+            8, 10, 9, 10, 11, 9, // Back
+            12, 14, 13, 14, 15, 13, // Left
+            16, 18, 17, 18, 19, 17, // Top
+            20, 22, 21, 22, 23, 21, // Bottom
         ],
     }
 }
@@ -101,6 +137,11 @@ pub struct State<'a> {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+
+    light_uniform: LightUniform,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
+
     num_indices: u32,
     camera_controller: CameraController,
     sys_metrics: SysMetrics,
@@ -187,10 +228,51 @@ impl<'a> State<'a> {
             config.height as f32,
         ));
 
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: None,
+            });
+
+        let light_uniform = LightUniform {
+            position: [2.0, 2.0, 2.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        };
+
+        // We'll want to update our lights position, so we use COPY_DST
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light VB"),
+            contents: bytemuck::cast_slice(&[light_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_buffer.as_entire_binding(),
+            }],
+            label: None,
+        });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_controller.camera().bind_group_layout],
+                bind_group_layouts: &[
+                    &camera_controller.camera().bind_group_layout,
+                    &light_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -248,13 +330,25 @@ impl<'a> State<'a> {
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&model.indices),
+            contents: bytemuck::cast_slice(&model.vertex_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let light_uniform = LightUniform {
+            position: [2.0, 2.0, 2.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        };
 
+        // We'll want to update our lights position, so we use COPY_DST
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light VB"),
+            contents: bytemuck::cast_slice(&[light_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
-        let num_indices = model.indices.len() as u32;
+        let num_indices = model.vertex_indices.len() as u32;
 
         Self {
             surface,
@@ -271,6 +365,9 @@ impl<'a> State<'a> {
             instance_buffer,
             window,
             last_frame: Instant::now(),
+            light_uniform,
+            light_buffer,
+            light_bind_group,
         }
     }
 
@@ -312,6 +409,18 @@ impl<'a> State<'a> {
 
         self.camera_controller.update(dt, &mut self.queue);
         self.sys_metrics.update(&self.queue);
+
+        // Update the light
+        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
+        self.light_uniform.position =
+            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
+                * old_position)
+                .into();
+        self.queue.write_buffer(
+            &self.light_buffer,
+            0,
+            bytemuck::cast_slice(&[self.light_uniform]),
+        );
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -349,6 +458,8 @@ impl<'a> State<'a> {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_controller.camera().bind_group, &[]);
+            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
+
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));
