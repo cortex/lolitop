@@ -252,13 +252,7 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        //    let metrics = SysMetrics::new();
 
-        /*let value_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Value Buffer"),
-            contents: bytemuck::cast_slice(VALUES),
-            usage: wgpu::BufferUsages::INDEX,
-        });*/
 
         let num_indices = model.indices.len() as u32;
 
@@ -280,10 +274,6 @@ impl<'a> State<'a> {
         }
     }
 
-    /*pub fn window(&self) -> &Window {
-        &self.window
-    }*/
-
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -299,12 +289,6 @@ impl<'a> State<'a> {
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         self.camera_controller.process_events(event);
         match event {
-            /*             WindowEvent::CursorMoved { position, .. } => {
-                //self.color.r = position.x / self.size.width as f64;
-                //self.color.b = position.y / self.size.height as f64;
-
-                true
-            } */
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
