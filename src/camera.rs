@@ -3,7 +3,9 @@ use std::time::Duration;
 use cgmath::{Angle, Rotation3, SquareMatrix};
 use wgpu::{util::DeviceExt, Buffer};
 use winit::{
-    dpi::PhysicalPosition, event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent}, keyboard::{Key, NamedKey}
+    dpi::PhysicalPosition,
+    event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},
+    keyboard::{Key, NamedKey},
 };
 
 pub struct Camera {
@@ -32,14 +34,14 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 
 impl Camera {
     fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        let position = self.target +
-            cgmath::Quaternion::from_angle_y(self.angle)
-            * cgmath::Quaternion::from_angle_z(self.plane_angle)
-            * (cgmath::Vector3::new(1.0, 0.0, 0.0) * self.distance);
-        
+        let position = self.target
+            + cgmath::Quaternion::from_angle_y(self.angle)
+                * cgmath::Quaternion::from_angle_z(self.plane_angle)
+                * (cgmath::Vector3::new(1.0, 0.0, 0.0) * self.distance);
+
         let view = cgmath::Matrix4::look_at_rh(position, self.target, self.up);
         let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        
+
         OPENGL_TO_WGPU_MATRIX * proj * view
     }
     pub fn new(device: &wgpu::Device, width: f32, height: f32) -> Self {
@@ -91,7 +93,7 @@ impl Camera {
 
         camera
     }
-    
+
     pub fn resize(&mut self, width: f32, height: f32) {
         self.aspect = width / height;
     }
@@ -154,19 +156,20 @@ impl CameraController {
             last_cursor_position: None,
         }
     }
-    
+
     pub fn camera(&self) -> &Camera {
         &self.camera
     }
-    
+
     pub fn camera_mut(&mut self) -> &mut Camera {
         &mut self.camera
     }
-    
+
     pub fn update(&mut self, dt: Duration, queue: &mut wgpu::Queue) {
         let camera = &mut self.camera;
         if self.is_forward_pressed {
-            camera.distance = (camera.distance - self.distance_per_second * dt.as_secs_f32()).max(0.0);
+            camera.distance =
+                (camera.distance - self.distance_per_second * dt.as_secs_f32()).max(0.0);
         }
         if self.is_backward_pressed {
             camera.distance += self.distance_per_second * dt.as_secs_f32();
@@ -185,7 +188,6 @@ impl CameraController {
 
         queue.write_buffer(&camera.buffer, 0, bytemuck::cast_slice(&[camera.uniform]));
     }
-
 
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
         match event {
@@ -222,7 +224,7 @@ impl CameraController {
             WindowEvent::MouseInput {
                 device_id: _,
                 state,
-                button: MouseButton::Right
+                button: MouseButton::Right,
             } => {
                 self.is_right_mouse_pressed = match state {
                     ElementState::Pressed => true,
@@ -233,31 +235,34 @@ impl CameraController {
             WindowEvent::MouseWheel {
                 device_id: _,
                 delta,
-                phase: TouchPhase::Moved
+                phase: TouchPhase::Moved,
             } => {
-                
-                // println!("{:?}", delta.1);
                 self.camera.distance += -match delta {
                     MouseScrollDelta::LineDelta(_, delta) => delta * self.distance_per_line,
-                    MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => *y as f32 * self.distance_per_pixel,
+                    MouseScrollDelta::PixelDelta(PhysicalPosition { x: _, y }) => {
+                        *y as f32 * self.distance_per_pixel
+                    }
                 };
-                
+
                 true
             }
             WindowEvent::CursorLeft { device_id: _ } => {
                 self.last_cursor_position = None;
                 true
             }
-            WindowEvent::CursorMoved { device_id: _, position } => {
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+            } => {
                 if self.is_right_mouse_pressed {
                     if let Some(last_cursor_position) = self.last_cursor_position {
-                        let delta =
-                            cgmath::Vector2::new(position.x, position.y)
+                        let delta = cgmath::Vector2::new(position.x, position.y)
                             - cgmath::Vector2::new(last_cursor_position.x, last_cursor_position.y);
-                        
-                        self.camera.plane_angle += cgmath::Deg(delta.y as f32 * self.degrees_per_pixel);
+
+                        self.camera.plane_angle +=
+                            cgmath::Deg(delta.y as f32 * self.degrees_per_pixel);
                         self.camera.plane_angle = self.camera.plane_angle.normalize();
-                        
+
                         self.camera.angle += -cgmath::Deg(delta.x as f32 * self.degrees_per_pixel);
                         self.camera.angle = self.camera.angle.normalize();
                     }
