@@ -23,19 +23,24 @@ pub struct State<'a> {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+
+    // Model
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    instance_buffer: wgpu::Buffer,
 
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
 
-    num_indices: u32,
     camera_controller: CameraController,
     sys_metrics: SysMetrics,
-    instance_buffer: wgpu::Buffer,
+
     window: Arc<Window>,
     last_frame: Instant,
+    is_fullscreen: bool,
+    is_transparent: bool,
 }
 
 impl<'a> State<'a> {
@@ -89,14 +94,14 @@ impl<'a> State<'a> {
             width: size.width,
             height: size.height,
             present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             view_formats: vec![],
         };
         surface.configure(&device, &config);
 
         let sys_metrics = SysMetrics::new(&device);
         let instance_data = sys_metrics
-            .instances
+            .cpu_core_instances
             .iter()
             .map(Instance::to_raw)
             .collect::<Vec<_>>();
@@ -171,7 +176,11 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceRaw::desc(), SysMetrics::desc()],
+                buffers: &[
+                    model::Vertex::desc(),
+                    InstanceRaw::desc(),
+                    SysMetrics::desc(),
+                ],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -210,7 +219,7 @@ impl<'a> State<'a> {
             // indicates how many array layers the attachments will have.
             multiview: None,
         });
-        let model = cube();
+        let model = model::cube();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&model.vertices),
@@ -256,6 +265,9 @@ impl<'a> State<'a> {
             light_uniform,
             light_buffer,
             light_bind_group,
+
+            is_fullscreen: false,
+            is_transparent: false,
         }
     }
 
@@ -269,6 +281,28 @@ impl<'a> State<'a> {
                 .camera_mut()
                 .resize(new_size.width as f32, new_size.height as f32);
         }
+    }
+
+    fn toggle_fullscreen(&mut self) {
+        if self.is_fullscreen {
+            self.window.set_fullscreen(None);
+        } else {
+            self.window
+                .set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        }
+        self.is_fullscreen = !self.is_fullscreen;
+    }
+
+    fn toggle_transparent(&mut self) {
+        if self.is_transparent {
+            self.window.set_transparent(false);
+            self.config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+        } else {
+            self.window.set_transparent(true);
+            self.config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        }
+        self.is_transparent = !self.is_transparent;
+        self.surface.configure(&self.device, &self.config);
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
@@ -286,6 +320,26 @@ impl<'a> State<'a> {
                 dbg!("space pressed");
                 true
             }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        logical_key: Key::Character(c),
+                        ..
+                    },
+                ..
+            } => match c.to_lowercase().as_str() {
+                "f" => {
+                    self.toggle_fullscreen();
+                    true
+                }
+                "t" => {
+                    self.toggle_transparent();
+                    false
+                }
+                _ => false,
+            },
+
             _ => false,
         }
     }
