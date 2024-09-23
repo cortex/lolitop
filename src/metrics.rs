@@ -10,7 +10,7 @@ pub struct SysMetrics {
     last_sample_time: Instant,
     pub cpu_usage_buffer: wgpu::Buffer,
     pub cpu_metrics: CPUMetrics,
-    pub instances: Vec<Instance>,
+    pub cpu_core_instances: Vec<Instance>,
 }
 
 impl SysMetrics {
@@ -31,7 +31,7 @@ impl SysMetrics {
             last_sample_time,
             cpu_metrics,
             cpu_usage_buffer,
-            instances: SysMetrics::instances(ncpus as u64),
+            cpu_core_instances: SysMetrics::instances(ncpus as u64),
         }
     }
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -67,7 +67,6 @@ impl SysMetrics {
         static SPACING: f32 = 2.0;
 
         let per_row = (n_cpus as f32).sqrt().ceil() as u64;
-        println!("{}", per_row);
         let displacement: cgmath::Vector3<f32> =
             cgmath::Vector3::new((per_row - 1) as f32, 0., (per_row - 1) as f32) * SPACING / 2.;
         (0..n_cpus)
