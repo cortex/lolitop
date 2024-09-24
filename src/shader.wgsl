@@ -118,18 +118,29 @@ fn to_fire(value: f32) -> vec4f {
     return vec4<f32>(mix(lowerColor, upperColor, fraction), 1.0);
 }
 
+fn constant_color(value: f32) -> vec4f {
+    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let object_color: vec4<f32> = to_fire(in.value);
 
-    let ambient_strength = 0.1;
-    let ambient_color = light.color * ambient_strength;
+    // let object_color: vec4<f32> = vec4<f32>(1.0, 1.0, 1.0, 1.0);
 
-    let light_dir = normalize(light.position - in.world_position);
+    let ambient_strength = 0.3;
+    let ambient_color = vec3<f32>(1.0, 0.0, 0.0) * ambient_strength;
+
+   let light_dir = normalize(light.position - in.world_position);
+
+    // let light_dir = -normalize(vec3(-0.7, -1.0, 0.5));
+
 
     let diffuse_strength = max(dot(in.world_normal, light_dir), 0.0);
-    let diffuse_color = light.color * diffuse_strength;
+    let falloff = 1.0 / (length(light.position - in.world_position) * 2.0);
+    let diffuse_color = light.color * diffuse_strength * falloff;
+
 
     let result = (ambient_color + diffuse_color) * object_color.xyz;
 

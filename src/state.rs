@@ -140,7 +140,7 @@ impl<'a> State<'a> {
             });
 
         let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
+            position: [1.5, 1.5, 1.5],
             _padding: 0,
             color: [1.0, 1.0, 1.0],
             _padding2: 0,
@@ -416,6 +416,7 @@ impl<'a> State<'a> {
             (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
                 * old_position)
                 .into();
+
         self.queue.write_buffer(
             &self.light_buffer,
             0,

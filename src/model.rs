@@ -61,10 +61,10 @@ pub fn cube() -> Model {
     // Normals
     let front = [0.0, 0.0, -1.0];
     let back = [0.0, 0.0, 1.0];
-    let left = [0.0, -1.0, 0.0];
-    let right = [0.0, 1.0, 0.0];
-    let top = [-1.0, 0.0, 0.0];
-    let bottom = [1.0, 0.0, 0.0];
+    let left = [-1.0, 0.0, 0.0];
+    let right = [1.0, 0.0, 0.0];
+    let top = [0.0, 1.0, 0.0];
+    let bottom = [0.0, -1.0, 0.0];
 
     Model {
         vertices: vec![
