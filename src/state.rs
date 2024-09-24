@@ -269,7 +269,7 @@ impl<'a> State<'a> {
             light_uniform,
             light_buffer,
             light_bind_group,
-
+            depth_texture,
             is_fullscreen: false,
             is_transparent: false,
         }
@@ -285,7 +285,7 @@ impl<'a> State<'a> {
             label: Some("depth_texture"),
             size: depth_buffer_size,
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
