@@ -7,7 +7,6 @@ struct Camera {
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
-
 struct Light {
     position: vec3<f32>,
     color: vec3<f32>,
@@ -53,7 +52,7 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
-    let scale_factor = instance_value.value * 0.5;
+    let scale_factor = instance_value.value * 2.0;
     let scaling = mat4x4<f32>(
         scale_factor, 0.0, 0.0, 0.0,
         0.0, scale_factor, 0.0, 0.0,
@@ -61,10 +60,17 @@ fn vs_main(
         0.0, 0.0, 0.0, 1.0
     );
 
+    let height_scaling = mat4x4<f32>(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, scale_factor, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+
     var out: VertexOutput;
 
     out.world_normal = model.normal;
-    out.clip_position = camera.view_proj * model_matrix * scaling * vec4<f32>(model.position, 1.0);
+    out.clip_position = camera.view_proj * model_matrix * height_scaling * vec4<f32>(model.position, 1.0);
     out.position = instance_value.value * model_matrix * vec4<f32>(model.position, 1.0);
 
     var world_position: vec4<f32> = model_matrix * vec4<f32>(model.position, 1.0);
@@ -85,8 +91,9 @@ fn to_cosmic(v: f32) -> vec4f {
 fn to_rainbow(v: f32) -> vec4f {
     // map v to a rainbow color in rgb
     let r = clamp(1.5 - abs(v - 0.75) * 4.0, 0.0, 1.0);
-    let g = clamp(1.5 - abs(v - 0.50) * 4.0, 0.0, 1.0);
-    let b = clamp(1.5 - abs(v - 0.25) * 4.0, 0.0, 1.0);
+  //  let g = clamp(1.5 - abs(v - 0.00) * 4.0, 0.0, 1.0);
+    let g = 0.0;
+    let b = clamp(1.5 - abs(v - 0.75) * 4.0, 0.0, 1.0);
     return vec4<f32>(r, g, b, 1.0);
 }
 
@@ -114,9 +121,9 @@ fn to_fire(value: f32) -> vec4f {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
-    let object_color: vec4<f32> = to_rainbow(in.value);
+    let object_color: vec4<f32> = to_fire(in.value);
 
-    let ambient_strength = 0.01;
+    let ambient_strength = 0.1;
     let ambient_color = light.color * ambient_strength;
 
     let light_dir = normalize(light.position - in.world_position);
