@@ -24,7 +24,9 @@ pub struct State<'a> {
     pub size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
 
-    depth_texture: wgpu::Texture,
+    depth_buffer: wgpu::Texture,
+    msaa_buffer: wgpu::TextureView,
+
     // Model
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -214,7 +216,7 @@ impl<'a> State<'a> {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: 1,
+                count: 4,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -250,7 +252,9 @@ impl<'a> State<'a> {
 
         let num_indices = model.vertex_indices.len() as u32;
 
-        let depth_texture = Self::depth_texture(&device, &config);
+        let depth_buffer = Self::depth_buffer(&device, &config);
+        let msaa_buffer = Self::msaa_buffer(&device, &config, 4);
+
         Self {
             surface,
             device,
@@ -269,13 +273,14 @@ impl<'a> State<'a> {
             light_uniform,
             light_buffer,
             light_bind_group,
-            depth_texture,
+            depth_buffer,
+            msaa_buffer,
             is_fullscreen: false,
             is_transparent: false,
         }
     }
 
-    fn depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::Texture {
+    fn depth_buffer(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::Texture {
         let depth_buffer_size = wgpu::Extent3d {
             width: config.width.max(1),
             height: config.height.max(1),
@@ -285,7 +290,7 @@ impl<'a> State<'a> {
             label: Some("depth_texture"),
             size: depth_buffer_size,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 4,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -293,6 +298,34 @@ impl<'a> State<'a> {
         };
         device.create_texture(&desc)
     }
+
+    fn msaa_buffer(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        sample_count: u32,
+    ) -> wgpu::TextureView {
+        let multisampled_texture_extent = wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        };
+        let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+            size: multisampled_texture_extent,
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            //    format: config.view_formats[0],
+            format: config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            label: None,
+            view_formats: &[],
+        };
+
+        device
+            .create_texture(multisampled_frame_descriptor)
+            .create_view(&wgpu::TextureViewDescriptor::default())
+    }
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -303,7 +336,8 @@ impl<'a> State<'a> {
                 .camera_mut()
                 .resize(new_size.width as f32, new_size.height as f32);
 
-            self.depth_texture = Self::depth_texture(&self.device, &self.config);
+            self.depth_buffer = Self::depth_buffer(&self.device, &self.config);
+            self.msaa_buffer = Self::msaa_buffer(&self.device, &self.config, 4);
         }
     }
 
@@ -405,8 +439,8 @@ impl<'a> State<'a> {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
+                    view: &self.msaa_buffer,
+                    resolve_target: Some(&view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.0,
@@ -419,7 +453,7 @@ impl<'a> State<'a> {
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self
-                        .depth_texture
+                        .depth_buffer
                         .create_view(&wgpu::TextureViewDescriptor::default()),
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
