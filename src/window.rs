@@ -26,9 +26,10 @@ pub async fn run() {
 
             let window_attributes = Window::default_attributes()
                 .with_title("lolitop!")
-                .with_decorations(true)
+                .with_decorations(false)
                 .with_enabled_buttons(buttons)
                 .with_name("se.frikod.lolitop", "main")
+                .with_transparent(true)
                 .with_resizable(true);
 
             let window: Window = event_loop.create_window(window_attributes).unwrap();
