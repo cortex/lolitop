@@ -326,6 +326,10 @@ impl<'a> State<'a> {
             .create_view(&wgpu::TextureViewDescriptor::default())
     }
 
+    pub fn window(&mut self) -> Arc<Window> {
+        self.window.clone()
+    }
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;

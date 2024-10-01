@@ -1,6 +1,8 @@
 use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cgmath::{Angle, Rotation3, SquareMatrix};
+use env_logger::fmt::Timestamp;
 use wgpu::{util::DeviceExt, Buffer};
 use winit::{
     dpi::PhysicalPosition,
@@ -127,6 +129,7 @@ pub struct CameraController {
     distance_per_line: f32,
     degrees_per_second: f32,
     degrees_per_pixel: f32,
+    angle_velocity: f32,
     is_up_pressed: bool,
     is_down_pressed: bool,
     is_forward_pressed: bool,
@@ -135,6 +138,7 @@ pub struct CameraController {
     is_right_pressed: bool,
     is_right_mouse_pressed: bool,
     last_cursor_position: Option<PhysicalPosition<f64>>,
+    last_cursor_position_ts: Option<Instant>,
 }
 
 impl CameraController {
@@ -146,6 +150,7 @@ impl CameraController {
             distance_per_line: 1.0,
             degrees_per_second: 180.0,
             degrees_per_pixel: 0.5,
+            angle_velocity: 20.0,
             is_up_pressed: false,
             is_down_pressed: false,
             is_forward_pressed: false,
@@ -154,6 +159,7 @@ impl CameraController {
             is_right_pressed: false,
             is_right_mouse_pressed: false,
             last_cursor_position: None,
+            last_cursor_position_ts: None,
         }
     }
 
@@ -183,6 +189,12 @@ impl CameraController {
             camera.angle -= cgmath::Deg(self.degrees_per_second * dt.as_secs_f32());
             camera.angle = camera.angle.normalize();
         }
+
+        self.angle_velocity *= 0.999;
+
+        camera.angle += cgmath::Deg(dt.as_secs_f32() * self.angle_velocity);
+        camera.angle = camera.angle.normalize();
+
         let pm = camera.build_view_projection_matrix().into();
         camera.uniform.view_proj = pm;
 
@@ -256,17 +268,19 @@ impl CameraController {
             } => {
                 if self.is_right_mouse_pressed {
                     if let Some(last_cursor_position) = self.last_cursor_position {
-                        let delta = cgmath::Vector2::new(position.x, position.y)
-                            - cgmath::Vector2::new(last_cursor_position.x, last_cursor_position.y);
+                        let delta = cgmath::Vector2::new(position.x as f32, position.y as f32)
+                            - cgmath::Vector2::new(
+                                last_cursor_position.x as f32,
+                                last_cursor_position.y as f32,
+                            );
 
-                        self.camera.plane_angle +=
-                            cgmath::Deg(delta.y as f32 * self.degrees_per_pixel);
+                        self.camera.plane_angle += cgmath::Deg(delta.y * self.degrees_per_pixel);
                         self.camera.plane_angle = self.camera.plane_angle.normalize();
 
-                        self.camera.angle += -cgmath::Deg(delta.x as f32 * self.degrees_per_pixel);
-                        self.camera.angle = self.camera.angle.normalize();
+                        self.angle_velocity += -delta.x * self.degrees_per_pixel * 2.0;
                     }
                 }
+                self.last_cursor_position_ts = Some(Instant::now());
                 self.last_cursor_position = Some(position.to_owned());
                 true
             }

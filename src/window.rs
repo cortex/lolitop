@@ -1,5 +1,6 @@
 use winit::{
     application::ApplicationHandler,
+    dpi::{LogicalPosition, PhysicalPosition},
     event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
@@ -12,9 +13,10 @@ use pollster::FutureExt;
 #[derive(Default)]
 struct App<'a> {
     state: Option<State<'a>>,
+    dragging: Option<PhysicalPosition<i32>>,
 }
 
-use crate::state::State;
+use crate::state::{self, State};
 
 pub async fn run() {
     env_logger::init();
@@ -73,6 +75,13 @@ pub async fn run() {
                             Err(e) => eprintln!("{:?}", e),
                         }
                     }
+                    WindowEvent::MouseInput { button, state, .. }
+                        if button == winit::event::MouseButton::Left =>
+                    {
+                        let window = self.state.as_mut().unwrap().window();
+                        window.drag_window();
+                    }
+
                     WindowEvent::Resized(physical_size) => {
                         let state = self.state.as_mut().unwrap();
                         state.resize(physical_size);
