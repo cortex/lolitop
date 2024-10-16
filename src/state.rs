@@ -9,8 +9,8 @@ use winit::{event::*, keyboard::Key};
 
 use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
-use crate::model;
 use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics};
+use crate::{model, text};
 
 use crate::light::LightUniform;
 
@@ -19,6 +19,7 @@ use std::sync::Arc;
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
+    window: Arc<Window>,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -33,14 +34,18 @@ pub struct State<'a> {
     num_indices: u32,
     instance_buffer: wgpu::Buffer,
 
+    // Light
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
 
+    // Camera
     camera_controller: CameraController,
     sys_metrics: SysMetrics,
 
-    window: Arc<Window>,
+    // Text
+    main_text: text::Text,
+
     last_frame: Instant,
     is_fullscreen: bool,
     is_transparent: bool,
@@ -255,6 +260,8 @@ impl<'a> State<'a> {
         let depth_buffer = Self::depth_buffer(&device, &config);
         let msaa_buffer = Self::msaa_buffer(&device, &config, 4);
 
+        let main_text = text::Text::init_text(&device, &queue, size.width, size.height);
+
         Self {
             surface,
             device,
@@ -275,6 +282,7 @@ impl<'a> State<'a> {
             light_bind_group,
             depth_buffer,
             msaa_buffer,
+            main_text,
             is_fullscreen: false,
             is_transparent: false,
         }
@@ -342,6 +350,10 @@ impl<'a> State<'a> {
 
             self.depth_buffer = Self::depth_buffer(&self.device, &self.config);
             self.msaa_buffer = Self::msaa_buffer(&self.device, &self.config, 4);
+
+            self.main_text
+                .resize(&self.queue, new_size.width, new_size.height);
+            self.window.request_redraw();
         }
     }
 
@@ -426,6 +438,9 @@ impl<'a> State<'a> {
             0,
             bytemuck::cast_slice(&[self.light_uniform]),
         );
+        self.main_text
+            .set_text(format!("lolitop v0.1 \n FPS: {:.2}", 1.0 / dt.as_secs_f64()).as_str());
+        self.window.request_redraw();
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -485,10 +500,13 @@ impl<'a> State<'a> {
                 0..self.sys_metrics.cpu_core_instances.len() as _,
             );
         }
+        self.main_text
+            .render(&self.device, &view, &mut encoder, &self.queue);
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
-        self.window.request_redraw();
+
+        //self.window.request_redraw();
         Ok(())
     }
 }
