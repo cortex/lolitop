@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use cgmath::{Angle, Rotation3, SquareMatrix};
-use env_logger::fmt::Timestamp;
 use wgpu::{util::DeviceExt, Buffer};
 use winit::{
     dpi::PhysicalPosition,
