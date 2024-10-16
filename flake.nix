@@ -14,6 +14,14 @@
           libxkbcommon
           wayland
           vulkan-loader
+
+          libxkbcommon
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
+          xorg.libxcb
+          pkgs.glfw
+
         ];
         desktopItem = pkgs.makeDesktopItem {
           name = "se.frikod.lolitop";
@@ -49,11 +57,17 @@
             rustPackages.clippy
             rust-analyzer
             wayland
-            xorg.libX11
-            libxkbcommon
             libGL
             wayland
             vulkan-loader
+
+
+            libxkbcommon
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXi
+            xorg.libxcb
+            pkgs.glfw
           ];
           LD_LIBRARY_PATH = libPath;
           RUST_SRC_PATH = rustPlatform.rustLibSrc;
