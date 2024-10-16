@@ -1,6 +1,5 @@
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalPosition, PhysicalPosition},
     event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
@@ -13,14 +12,13 @@ use pollster::FutureExt;
 #[derive(Default)]
 struct App<'a> {
     state: Option<State<'a>>,
-    dragging: Option<PhysicalPosition<i32>>,
 }
 
-use crate::state::{self, State};
+use crate::state::State;
 
 pub async fn run() {
     env_logger::init();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new().expect("Failed to create event loop");
 
     impl<'a> ApplicationHandler for App<'a> {
         fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -75,11 +73,11 @@ pub async fn run() {
                             Err(e) => eprintln!("{:?}", e),
                         }
                     }
-                    WindowEvent::MouseInput { button, state, .. }
+                    WindowEvent::MouseInput { button, .. }
                         if button == winit::event::MouseButton::Left =>
                     {
                         let window = self.state.as_mut().unwrap().window();
-                        window.drag_window();
+                        window.drag_window().unwrap();
                     }
 
                     WindowEvent::Resized(physical_size) => {
