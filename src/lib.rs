@@ -6,3 +6,10 @@ pub mod model;
 pub mod state;
 pub mod text;
 pub mod window;
+
+#[macro_export]
+macro_rules! lines {
+    ($($x:expr),*) => {
+        concat!($( $x, "\n" ),*)
+    };
+}

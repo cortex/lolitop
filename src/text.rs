@@ -31,7 +31,7 @@ impl Text {
         let mut atlas = TextAtlas::new(&device, &queue, &cache, TextureFormat::Rgba8UnormSrgb);
         let text_renderer =
             TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
-        let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(12.0, 12.0));
+        let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(18.0, 18.0));
 
         text_buffer.set_size(&mut font_system, Some(width as f32), Some(height as f32));
         text_buffer.set_text(
@@ -127,6 +127,5 @@ impl Text {
         self.text_renderer
             .render(&self.atlas, &self.viewport, &mut pass)
             .unwrap();
-        // self.atlas.trim();
     }
 }

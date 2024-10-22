@@ -9,7 +9,7 @@ use winit::{event::*, keyboard::Key};
 
 use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
-use crate::{camera::Camera, metrics::Instance, metrics::SysMetrics};
+use crate::{camera::Camera, metrics::SysMetrics};
 use crate::{model, text};
 
 use crate::light::LightUniform;
@@ -27,12 +27,6 @@ pub struct State<'a> {
 
     depth_buffer: wgpu::Texture,
     msaa_buffer: wgpu::TextureView,
-
-    // Model
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    instance_buffer: wgpu::Buffer,
 
     // Light
     light_uniform: LightUniform,
@@ -108,16 +102,6 @@ impl<'a> State<'a> {
         surface.configure(&device, &config);
 
         let sys_metrics = SysMetrics::new(&device);
-        let instance_data = sys_metrics
-            .cpu_core_instances
-            .iter()
-            .map(Instance::to_raw)
-            .collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -151,7 +135,6 @@ impl<'a> State<'a> {
             _padding2: 0,
         };
 
-        // We'll want to update our lights position, so we use COPY_DST
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light VB"),
             contents: bytemuck::cast_slice(&[light_uniform]),
@@ -229,17 +212,6 @@ impl<'a> State<'a> {
             // indicates how many array layers the attachments will have.
             multiview: None,
         });
-        let model = model::cube();
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&model.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&model.vertex_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
 
         let light_uniform = LightUniform {
             position: [2.0, 2.0, 2.0],
@@ -255,8 +227,6 @@ impl<'a> State<'a> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let num_indices = model.vertex_indices.len() as u32;
-
         let depth_buffer = Self::depth_buffer(&device, &config);
         let msaa_buffer = Self::msaa_buffer(&device, &config, 4);
 
@@ -269,12 +239,9 @@ impl<'a> State<'a> {
             config,
             size,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
+
             camera_controller,
             sys_metrics,
-            instance_buffer,
             window,
             last_frame: Instant::now(),
             light_uniform,
@@ -411,6 +378,17 @@ impl<'a> State<'a> {
                     self.toggle_transparent();
                     false
                 }
+                "r" => {
+                    // cycle through the available sample rates
+                    let sample_rates = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0];
+                    let current_rate = self.sys_metrics.sample_rate_hz;
+                    let new_rate = sample_rates
+                        .iter()
+                        .find(|&&r| r > current_rate)
+                        .unwrap_or(&sample_rates[0]);
+                    self.sys_metrics.sample_rate_hz = *new_rate;
+                    true
+                }
                 _ => false,
             },
 
@@ -438,8 +416,15 @@ impl<'a> State<'a> {
             0,
             bytemuck::cast_slice(&[self.light_uniform]),
         );
-        self.main_text
-            .set_text(format!("lolitop v0.1 \n FPS: {:.2}", 1.0 / dt.as_secs_f64()).as_str());
+
+        self.main_text.set_text(
+            &[
+                "lolitop v0.1",
+                format!("FPS: {:.2}", 1.0 / dt.as_secs_f64()).as_str(),
+                format!("Sample rate: {}hz", self.sys_metrics.sample_rate_hz).as_str(),
+            ]
+            .join("\n"),
+        );
         self.window.request_redraw();
     }
 
@@ -454,7 +439,6 @@ impl<'a> State<'a> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -485,19 +469,11 @@ impl<'a> State<'a> {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_controller.camera().bind_group, &[]);
-            render_pass.set_bind_group(1, &self.light_bind_group, &[]);
-
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_vertex_buffer(2, self.sys_metrics.cpu_usage_buffer.slice(..));
-
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(
-                0..self.num_indices,
-                0,
-                0..self.sys_metrics.cpu_core_instances.len() as _,
+            self.sys_metrics.render(
+                &mut render_pass,
+                &self.render_pipeline,
+                &self.light_bind_group,
+                &self.camera_controller,
             );
         }
         self.main_text
@@ -506,7 +482,6 @@ impl<'a> State<'a> {
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
 
-        //self.window.request_redraw();
         Ok(())
     }
 }
