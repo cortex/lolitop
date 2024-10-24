@@ -28,7 +28,7 @@ impl Text {
         let swash_cache = SwashCache::new();
         let cache = Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
-        let mut atlas = TextAtlas::new(&device, &queue, &cache, TextureFormat::Rgba8UnormSrgb);
+        let mut atlas = TextAtlas::new(&device, &queue, &cache, TextureFormat::Bgra8UnormSrgb);
         let text_renderer =
             TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
         let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(18.0, 18.0));
