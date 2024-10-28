@@ -230,7 +230,7 @@ impl<'a> State<'a> {
         let depth_buffer = Self::depth_buffer(&device, &config);
         let msaa_buffer = Self::msaa_buffer(&device, &config, 4);
 
-        let main_text = text::Text::init_text(&device, &queue, size.width, size.height);
+        let main_text = text::Text::init_text(&device, &queue, surface_format, size.width, size.height);
 
         Self {
             surface,
