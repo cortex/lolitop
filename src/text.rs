@@ -17,7 +17,7 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn init_text(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Self {
+    pub fn init_text(device: &wgpu::Device, queue: &wgpu::Queue, texture_format: TextureFormat, width: u32, height: u32) -> Self {
         //let mut font_system = FontSystem::new();
         let mut font_system = FontSystem::new_with_fonts(
             vec![fontdb::Source::Binary(Arc::new(include_bytes!(
@@ -28,7 +28,7 @@ impl Text {
         let swash_cache = SwashCache::new();
         let cache = Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
-        let mut atlas = TextAtlas::new(&device, &queue, &cache, TextureFormat::Bgra8UnormSrgb);
+        let mut atlas = TextAtlas::new(&device, &queue, &cache, texture_format);
         let text_renderer =
             TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
         let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(18.0, 18.0));
