@@ -1,16 +1,16 @@
 use std::iter;
 use std::time::Instant;
 
+use crate::camera::CameraController;
+use crate::metrics::InstanceRaw;
+use crate::ui::UI;
+use crate::{camera::Camera, metrics::SysMetrics};
+use crate::{model, text};
 use cgmath::Rotation3;
 use wgpu::util::DeviceExt;
 use winit::keyboard::NamedKey;
 use winit::window::Window;
 use winit::{event::*, keyboard::Key};
-
-use crate::camera::CameraController;
-use crate::metrics::InstanceRaw;
-use crate::{camera::Camera, metrics::SysMetrics};
-use crate::{model, text};
 
 use crate::light::LightUniform;
 
@@ -35,6 +35,8 @@ pub struct State<'a> {
 
     // Camera
     camera_controller: CameraController,
+
+    // Metrics
     sys_metrics: SysMetrics,
 
     // Text
@@ -43,6 +45,8 @@ pub struct State<'a> {
     last_frame: Instant,
     is_fullscreen: bool,
     is_transparent: bool,
+    show_help: bool,
+    ui: UI,
 }
 
 impl<'a> State<'a> {
@@ -166,7 +170,7 @@ impl<'a> State<'a> {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: "vs_main".into(),
                 buffers: &[
                     model::Vertex::desc(),
                     InstanceRaw::desc(),
@@ -176,7 +180,7 @@ impl<'a> State<'a> {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: "fs_main".into(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
@@ -230,7 +234,10 @@ impl<'a> State<'a> {
         let depth_buffer = Self::depth_buffer(&device, &config);
         let msaa_buffer = Self::msaa_buffer(&device, &config, 4);
 
-        let main_text = text::Text::init_text(&device, &queue, surface_format, size.width, size.height);
+        let main_text =
+            text::Text::init_text(&device, &queue, surface_format, size.width, size.height);
+
+        let ui = UI::new(&window, surface_format, &device);
 
         Self {
             surface,
@@ -252,6 +259,8 @@ impl<'a> State<'a> {
             main_text,
             is_fullscreen: false,
             is_transparent: false,
+            show_help: false,
+            ui,
         }
     }
 
@@ -346,7 +355,15 @@ impl<'a> State<'a> {
         self.surface.configure(&self.device, &self.config);
     }
 
+    fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+    }
     pub fn input(&mut self, event: &WindowEvent) -> bool {
+        let res = self.ui.handle(&self.window.as_ref(), event);
+        if res.consumed {
+            println!("consumed");
+            return true;
+        }
         self.camera_controller.process_events(event);
         match event {
             WindowEvent::KeyboardInput {
@@ -389,6 +406,11 @@ impl<'a> State<'a> {
                     self.sys_metrics.sample_rate_hz = *new_rate;
                     true
                 }
+                "h" => {
+                    // display help
+                    self.toggle_help();
+                    true
+                }
                 _ => false,
             },
 
@@ -417,14 +439,29 @@ impl<'a> State<'a> {
             bytemuck::cast_slice(&[self.light_uniform]),
         );
 
-        self.main_text.set_text(
-            &[
-                "lolitop v0.1",
-                format!("FPS: {:.2}", 1.0 / dt.as_secs_f64()).as_str(),
-                format!("Sample rate: {}hz", self.sys_metrics.sample_rate_hz).as_str(),
-            ]
-            .join("\n"),
-        );
+        if self.show_help {
+            self.main_text.set_text(
+                &[
+                    "lolitop v0.1",
+                    format!("FPS: {:.}", (1.0 / dt.as_secs_f64()).round()).as_str(),
+                    format!("Sample rate: {}hz", self.sys_metrics.sample_rate_hz).as_str(),
+                    "f : toggle fullscreen",
+                    "t: toggle transparent",
+                    "r: change sample rate",
+                    "h: toggle help",
+                ]
+                .join("\n"),
+            );
+        } else {
+            self.main_text.set_text(
+                &[
+                    "lolitop v0.1",
+                    format!("FPS: {:.}", (1.0 / dt.as_secs_f64()).round()).as_str(),
+                    format!("Sample rate: {}hz", self.sys_metrics.sample_rate_hz).as_str(),
+                ]
+                .join("\n"),
+            );
+        }
         self.window.request_redraw();
     }
 
@@ -433,12 +470,9 @@ impl<'a> State<'a> {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -478,10 +512,17 @@ impl<'a> State<'a> {
         }
         self.main_text
             .render(&self.device, &view, &mut encoder, &self.queue);
-
+        self.ui.render(
+            &self.window,
+            &view,
+            &self.msaa_buffer,
+            &mut encoder,
+            &self.device,
+            &self.queue,
+        );
         self.queue.submit(iter::once(encoder.finish()));
-        output.present();
 
+        output.present();
         Ok(())
     }
 }

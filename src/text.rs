@@ -17,7 +17,13 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn init_text(device: &wgpu::Device, queue: &wgpu::Queue, texture_format: TextureFormat, width: u32, height: u32) -> Self {
+    pub fn init_text(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture_format: TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
         //let mut font_system = FontSystem::new();
         let mut font_system = FontSystem::new_with_fonts(
             vec![fontdb::Source::Binary(Arc::new(include_bytes!(
@@ -94,9 +100,9 @@ impl Text {
                 &self.viewport,
                 [TextArea {
                     buffer: &self.text_buffer,
-                    left: 0.0,
-                    top: 0.0,
-                    scale: 2.0,
+                    left: self.text_buffer.size().0.unwrap() - 300.0,
+                    top: self.text_buffer.size().1.unwrap() - 200.0,
+                    scale: 1.0,
                     bounds: TextBounds {
                         left: 0,
                         top: 0,

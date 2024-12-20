@@ -73,13 +73,13 @@ pub async fn run() {
                             Err(e) => eprintln!("{:?}", e),
                         }
                     }
+
                     WindowEvent::MouseInput { button, .. }
                         if button == winit::event::MouseButton::Left =>
                     {
                         let window = self.state.as_mut().unwrap().window();
                         window.drag_window().unwrap();
                     }
-
                     WindowEvent::Resized(physical_size) => {
                         let state = self.state.as_mut().unwrap();
                         state.resize(physical_size);
