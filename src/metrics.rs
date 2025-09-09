@@ -137,7 +137,7 @@ impl SysMetrics {
     ) {
         render_pass.set_pipeline(&render_pipeline);
         render_pass.set_bind_group(0, &camera_controller.camera().bind_group, &[]);
-        render_pass.set_bind_group(1, &light_bind_group, &[]);
+        render_pass.set_bind_group(1, light_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));

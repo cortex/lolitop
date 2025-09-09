@@ -17,7 +17,13 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn init_text(device: &wgpu::Device, queue: &wgpu::Queue, texture_format: TextureFormat, width: u32, height: u32) -> Self {
+    pub fn init_text(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture_format: TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
         //let mut font_system = FontSystem::new();
         let mut font_system = FontSystem::new_with_fonts(
             vec![fontdb::Source::Binary(Arc::new(include_bytes!(
@@ -37,7 +43,7 @@ impl Text {
         text_buffer.set_text(
             &mut font_system,
             "lolitop v 0.1",
-            Attrs::new().family(Family::Name("Inter")),
+            &Attrs::new().family(Family::Name("Inter")),
             Shaping::Advanced,
         );
         text_buffer.shape_until_scroll(&mut font_system, false);
@@ -56,7 +62,7 @@ impl Text {
         self.text_buffer.set_text(
             &mut self.font_system,
             text,
-            Attrs::new().family(Family::Name("Inter")),
+            &Attrs::new().family(Family::Name("Inter")),
             Shaping::Advanced,
         );
         self.text_buffer
