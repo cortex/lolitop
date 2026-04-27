@@ -16,10 +16,10 @@
           vulkan-loader
 
           libxkbcommon
-          xorg.libX11
-          xorg.libXcursor
-          xorg.libXi
-          xorg.libxcb
+          libX11
+          libXcursor
+          libXi
+          libxcb
           pkgs.glfw
 
         ];
@@ -63,10 +63,10 @@
 
 
             libxkbcommon
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
-            xorg.libxcb
+            libX11
+            libXcursor
+            libXi
+            libxcb
             pkgs.glfw
           ];
           LD_LIBRARY_PATH = libPath;
