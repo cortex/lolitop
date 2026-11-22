@@ -88,6 +88,14 @@ pub async fn run() {
                 }
             }
         }
+
+        fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+            // Drop the wgpu surface, egui-winit state and window while the event loop's
+            // display connection is still alive. `run_app` consumes the event loop, so
+            // if `State` lives until `App` is dropped it outlives the Wayland connection
+            // and tearing down the surface segfaults.
+            self.state = None;
+        }
     }
     let mut app = App::default();
     event_loop.set_control_flow(ControlFlow::Poll);
