@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wgpu = "25.0.2"
-winit = { version = "0.30.12" }
-wayland-cursor = "0.31.11"
-env_logger = "0.11.8"
-log = "0.4.28"
-pollster = "0.4.0"
-bytemuck = { version = "1.23.2", features = ["derive"] }
+wgpu = "30"
+winit = { version = "0.30" }
+wayland-cursor = "0.31"
+env_logger = "0.11"
+log = "0.4"
+pollster = "1.0"
+bytemuck = { version = "1.25", features = ["derive"] }
 cgmath = "0.18"
-anyhow = "1.0.99"
-glyphon = "0.9.0"
+anyhow = "1.0"
+glyphon = "0.12"
+egui = { version = "0.37", features = ["default_fonts"] }
+egui-winit = "0.37"
+egui-wgpu = { version = "0.37", features = ["winit"] }

@@ -3,18 +3,22 @@ use std::time::Instant;
 
 use cgmath::Rotation3;
 use wgpu::util::DeviceExt;
-use winit::keyboard::NamedKey;
+use winit::event::*;
 use winit::window::Window;
-use winit::{event::*, keyboard::Key};
 
 use crate::camera::CameraController;
 use crate::metrics::InstanceRaw;
 use crate::{camera::Camera, metrics::SysMetrics};
-use crate::{model, text};
+use crate::{model, text, ui};
 
 use crate::light::LightUniform;
 
 use std::sync::Arc;
+
+pub struct InputResponse {
+    pub consumed: bool,
+    pub exit_requested: bool,
+}
 
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
@@ -40,18 +44,23 @@ pub struct State<'a> {
     // Text
     main_text: text::Text,
 
+    // UI overlay
+    ui: ui::UI,
+
     last_frame: Instant,
     is_fullscreen: bool,
     is_transparent: bool,
+    background_alpha: f64,
+    fps: f64,
+    window_drag_armed: bool,
 }
 
 impl<'a> State<'a> {
     pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
+        let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        instance_descriptor.backends = wgpu::Backends::all();
+        let instance = wgpu::Instance::new(instance_descriptor);
 
         let window = Arc::new(window);
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
@@ -60,6 +69,7 @@ impl<'a> State<'a> {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .expect("no suitable adapter found");
@@ -74,6 +84,7 @@ impl<'a> State<'a> {
                 } else {
                     wgpu::Limits::default()
                 },
+                experimental_features: Default::default(),
                 memory_hints: wgpu::MemoryHints::Performance,
                 trace: wgpu::Trace::Off,
             })
@@ -91,10 +102,11 @@ impl<'a> State<'a> {
             desired_maximum_frame_latency: 2,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            alpha_mode: wgpu::CompositeAlphaMode::PreMultiplied,
             view_formats: vec![],
         };
         surface.configure(&device, &config);
@@ -152,10 +164,10 @@ impl<'a> State<'a> {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &camera_controller.camera().bind_group_layout,
-                    &light_bind_group_layout,
+                    Some(&camera_controller.camera().bind_group_layout),
+                    Some(&light_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -166,9 +178,9 @@ impl<'a> State<'a> {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[
-                    model::Vertex::desc(),
-                    InstanceRaw::desc(),
-                    SysMetrics::desc(),
+                    Some(model::Vertex::desc()),
+                    Some(InstanceRaw::desc()),
+                    Some(SysMetrics::desc()),
                 ],
                 compilation_options: Default::default(),
             },
@@ -196,8 +208,8 @@ impl<'a> State<'a> {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -208,15 +220,8 @@ impl<'a> State<'a> {
             },
             // If the pipeline will be used with a multiview render pass, this
             // indicates how many array layers the attachments will have.
-            multiview: None,
+            multiview_mask: None,
         });
-
-        let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
-            _padding: 0,
-            color: [1.0, 1.0, 1.0],
-            _padding2: 0,
-        };
 
         // We'll want to update our lights position, so we use COPY_DST
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -230,6 +235,8 @@ impl<'a> State<'a> {
 
         let main_text =
             text::Text::init_text(&device, &queue, surface_format, size.width, size.height);
+
+        let ui = ui::UI::new(&window, surface_format, &device);
 
         Self {
             surface,
@@ -249,8 +256,12 @@ impl<'a> State<'a> {
             depth_buffer,
             msaa_buffer,
             main_text,
+            ui,
             is_fullscreen: false,
             is_transparent: false,
+            background_alpha: 1.0,
+            fps: 0.0,
+            window_drag_armed: false,
         }
     }
 
@@ -300,10 +311,6 @@ impl<'a> State<'a> {
             .create_view(&wgpu::TextureViewDescriptor::default())
     }
 
-    pub fn window(&mut self) -> Arc<Window> {
-        self.window.clone()
-    }
-
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -323,75 +330,55 @@ impl<'a> State<'a> {
         }
     }
 
-    fn toggle_fullscreen(&mut self) {
-        if self.is_fullscreen {
-            self.window.set_fullscreen(None);
-        } else {
-            self.window
-                .set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-        }
-        self.is_fullscreen = !self.is_fullscreen;
+    fn start_window_drag(&mut self) {
+        // The compositor takes over the pointer; we won't see the release event.
+        self.window_drag_armed = false;
+        let _ = self.window.drag_window();
+        self.ui.release_primary_button();
+        self.window.request_redraw();
     }
 
-    fn toggle_transparent(&mut self) {
-        if self.is_transparent {
-            self.window.set_transparent(false);
-            self.config.alpha_mode = wgpu::CompositeAlphaMode::Opaque;
-        } else {
-            self.window.set_transparent(true);
-            self.config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+    pub fn input(&mut self, event: &WindowEvent) -> InputResponse {
+        let ui_response = self.ui.handle(
+            &self.window,
+            event,
+            &mut self.is_fullscreen,
+            &mut self.is_transparent,
+            &mut self.sys_metrics.sample_rate_hz,
+        );
+        if ui_response.repaint {
+            self.window.request_redraw();
         }
-        self.is_transparent = !self.is_transparent;
-        self.surface.configure(&self.device, &self.config);
-    }
 
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
+        if let WindowEvent::MouseInput {
+            state,
+            button: winit::event::MouseButton::Left,
+            ..
+        } = event
+        {
+            self.window_drag_armed = *state == ElementState::Pressed && !ui_response.consumed;
+        }
+
+        if ui_response.consumed {
+            return InputResponse {
+                consumed: true,
+                exit_requested: ui_response.exit_requested,
+            };
+        }
+
+        if matches!(event, WindowEvent::CursorMoved { .. }) && self.window_drag_armed {
+            self.start_window_drag();
+            return InputResponse {
+                consumed: true,
+                exit_requested: ui_response.exit_requested,
+            };
+        }
+
         self.camera_controller.process_events(event);
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        logical_key: Key::Named(NamedKey::Space),
-                        state: winit::event::ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } => {
-                dbg!("space pressed");
-                true
-            }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        logical_key: Key::Character(c),
-                        ..
-                    },
-                ..
-            } => match c.to_lowercase().as_str() {
-                "f" => {
-                    self.toggle_fullscreen();
-                    true
-                }
-                "t" => {
-                    self.toggle_transparent();
-                    false
-                }
-                "r" => {
-                    // cycle through the available sample rates
-                    let sample_rates = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0];
-                    let current_rate = self.sys_metrics.sample_rate_hz;
-                    let new_rate = sample_rates
-                        .iter()
-                        .find(|&&r| r > current_rate)
-                        .unwrap_or(&sample_rates[0]);
-                    self.sys_metrics.sample_rate_hz = *new_rate;
-                    true
-                }
-                _ => false,
-            },
 
-            _ => false,
+        InputResponse {
+            consumed: false,
+            exit_requested: ui_response.exit_requested,
         }
     }
 
@@ -416,19 +403,41 @@ impl<'a> State<'a> {
             bytemuck::cast_slice(&[self.light_uniform]),
         );
 
+        self.fps = self.fps + 0.1 * ((1.0 / dt.as_secs_f64()) - self.fps);
+
         self.main_text.set_text(
             &[
                 "lolitop v0.1",
-                format!("FPS: {:.2}", 1.0 / dt.as_secs_f64()).as_str(),
+                format!("FPS: {:.0}", self.fps).as_str(),
                 format!("Sample rate: {}hz", self.sys_metrics.sample_rate_hz).as_str(),
             ]
             .join("\n"),
         );
+
+        let target_alpha = if self.is_transparent { 0.0 } else { 1.0 };
+        let max_change = 2.0 * dt.as_secs_f64();
+        self.background_alpha +=
+            (target_alpha - self.background_alpha).clamp(-max_change, max_change);
         self.window.request_redraw();
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+    pub fn render(&mut self) {
+        let (output, suboptimal) = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(output) => (output, false),
+            wgpu::CurrentSurfaceTexture::Suboptimal(output) => (output, true),
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.resize(self.size);
+                return;
+            }
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return;
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                eprintln!("Surface validation error while acquiring frame");
+                return;
+            }
+        };
+
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -443,13 +452,14 @@ impl<'a> State<'a> {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.msaa_buffer,
+                    depth_slice: None,
                     resolve_target: Some(&view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.0,
                             g: 0.0,
                             b: 0.0,
-                            a: 0.0,
+                            a: self.background_alpha,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -466,6 +476,7 @@ impl<'a> State<'a> {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             self.sys_metrics.render(
@@ -478,9 +489,40 @@ impl<'a> State<'a> {
         self.main_text
             .render(&self.device, &view, &mut encoder, &self.queue);
 
-        self.queue.submit(iter::once(encoder.finish()));
-        output.present();
+        let cpu_usages = self.sys_metrics.cpu_metrics.interpolate_usage(0.0);
+        let ui_out = self.ui.render(
+            &self.window,
+            &view,
+            &mut encoder,
+            &self.device,
+            &self.queue,
+            self.fps,
+            self.sys_metrics.sample_rate_hz,
+            self.is_transparent,
+            &cpu_usages,
+        );
 
-        Ok(())
+        self.sys_metrics.sample_rate_hz = ui_out.sample_rate_hz;
+        let should_toggle_transparency = ui_out.transparency_toggled;
+
+        self.queue.submit(
+            ui_out
+                .command_buffers
+                .into_iter()
+                .chain(iter::once(encoder.finish())),
+        );
+        self.queue.present(output);
+
+        if ui_out.start_window_drag {
+            self.start_window_drag();
+        }
+
+        if should_toggle_transparency {
+            self.ui.toggle_transparent(&mut self.is_transparent);
+        }
+
+        if suboptimal {
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 }

@@ -1,12 +1,12 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, VecDeque},
     fs::File,
     io::{BufRead, BufReader},
 };
 
 #[derive(Debug)]
 struct CPUSample {
-    cpu_id: String,
+    cpu_id: u32,
     user: u64,
     nice: u64,
     system: u64,
@@ -48,13 +48,11 @@ impl CPUSample {
 
 fn parse_row(row: &str) -> Option<CPUSample> {
     let words: Vec<&str> = row.split_whitespace().collect();
-    // The line we are interested in is the one that starts with cpu
-    if !words[0].starts_with("cpu") || words[0] == "cpu" {
-        return None;
-    }
+    // We want the per-core lines ("cpu0", "cpu1", ...), not the aggregate "cpu" line.
+    let cpu_id = words.first()?.strip_prefix("cpu")?.parse().ok()?;
 
     Some(CPUSample {
-        cpu_id: words[0].to_string(),
+        cpu_id,
         user: words[1].parse().ok()?,
         nice: words[2].parse().ok()?,
         system: words[3].parse().ok()?,
@@ -68,8 +66,12 @@ fn parse_row(row: &str) -> Option<CPUSample> {
     })
 }
 
+/// Interpolation needs the usage over the last two intervals, i.e. three samples.
+const SAMPLES_KEPT: usize = 3;
+
 pub struct CPUMetrics {
-    samples: HashMap<String, Vec<CPUSample>>,
+    /// Most recent samples per core, keyed by core number so iteration is in core order.
+    samples: BTreeMap<u32, VecDeque<CPUSample>>,
 }
 
 impl CPUMetrics {
@@ -86,34 +88,33 @@ impl CPUMetrics {
             let line = line.unwrap();
             let sample = parse_row(&line);
             if let Some(sample) = sample {
-                self.samples
-                    .entry(sample.cpu_id.clone())
-                    .or_default()
-                    .push(sample);
+                let history = self.samples.entry(sample.cpu_id).or_default();
+                if history.len() == SAMPLES_KEPT {
+                    history.pop_front();
+                }
+                history.push_back(sample);
             }
         }
     }
 
     pub fn interpolate_usage(&self, delta: f32) -> Vec<f32> {
-        self.samples.iter().filter_map(|(_, samples)| {
-            if samples.len() < 3 {
-                return None;
-            }
-            let last = samples.last().unwrap();
-            let prev = &samples[samples.len() - 2];
-            let pprev = &samples[samples.len() - 3];
+        self.samples
+            .values()
+            .filter_map(|samples| {
+                let (pprev, prev, last) = (samples.front()?, samples.get(1)?, samples.get(2)?);
 
-            let last_usage = last.usage(prev);
-            let prev_usage = prev.usage(pprev);
-            Some(prev_usage + (last_usage - prev_usage) * delta)
-        }).collect()
+                let last_usage = last.usage(prev);
+                let prev_usage = prev.usage(pprev);
+                Some(prev_usage + (last_usage - prev_usage) * delta)
+            })
+            .collect()
     }
 }
 
 impl Default for CPUMetrics {
     fn default() -> Self {
         let mut s = CPUMetrics {
-            samples: HashMap::new(),
+            samples: BTreeMap::new(),
         };
         s.sample();
         s

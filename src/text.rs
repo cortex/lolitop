@@ -39,12 +39,12 @@ impl Text {
             TextRenderer::new(&mut atlas, &device, wgpu::MultisampleState::default(), None);
         let mut text_buffer = Buffer::new(&mut font_system, Metrics::new(18.0, 18.0));
 
-        text_buffer.set_size(&mut font_system, Some(width as f32), Some(height as f32));
+        text_buffer.set_size(Some(width as f32), Some(height as f32));
         text_buffer.set_text(
-            &mut font_system,
             "lolitop v 0.1",
             &Attrs::new().family(Family::Name("Inter")),
             Shaping::Advanced,
+            None,
         );
         text_buffer.shape_until_scroll(&mut font_system, false);
         Self {
@@ -60,21 +60,18 @@ impl Text {
 
     pub fn set_text(&mut self, text: &str) {
         self.text_buffer.set_text(
-            &mut self.font_system,
             text,
             &Attrs::new().family(Family::Name("Inter")),
             Shaping::Advanced,
+            None,
         );
         self.text_buffer
             .shape_until_scroll(&mut self.font_system, false);
     }
 
     pub fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
-        self.text_buffer.set_size(
-            &mut self.font_system,
-            Some(width as f32),
-            Some(height as f32),
-        );
+        self.text_buffer
+            .set_size(Some(width as f32), Some(height as f32));
         self.viewport.update(
             &queue,
             Resolution {
@@ -100,16 +97,16 @@ impl Text {
                 &self.viewport,
                 [TextArea {
                     buffer: &self.text_buffer,
-                    left: 0.0,
-                    top: 0.0,
-                    scale: 2.0,
+                    left: self.viewport.resolution().width as f32 - 200.0,
+                    top: self.viewport.resolution().height as f32 - 80.0,
+                    scale: 1.0,
                     bounds: TextBounds {
                         left: 0,
                         top: 0,
                         right: 2000,
                         bottom: 2000,
                     },
-                    default_color: Color::rgba(255, 255, 255, 255),
+                    default_color: Color::rgba(255, 255, 255, 100),
                     custom_glyphs: &[],
                 }],
                 &mut self.swash_cache,
@@ -119,6 +116,7 @@ impl Text {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -128,6 +126,7 @@ impl Text {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         self.text_renderer

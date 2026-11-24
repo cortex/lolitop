@@ -5,6 +5,7 @@ pub mod metrics;
 pub mod model;
 pub mod state;
 pub mod text;
+pub mod ui;
 pub mod window;
 
 #[macro_export]
